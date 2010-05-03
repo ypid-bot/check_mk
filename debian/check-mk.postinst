@@ -1,0 +1,37 @@
+#! /bin/sh
+
+# Abort if any command returns an error value
+set -e
+
+package=check-mk
+
+install_ucf () {
+    target=$1
+    dist_conf=${2:-${target##*/}}
+    examplesdir=/usr/share/doc/$package/examples
+
+    ucf --three-way --debconf-ok $examplesdir/$dist_conf $target
+    ucfr $package $target
+}
+
+case "$1" in
+    configure)
+	install_ucf /etc/check_mk/main.mk
+	install_ucf /etc/check_mk/check_mk_templates.cfg
+
+	chown nagios:nagios /var/lib/check_mk/cache
+	chown nagios:nagios /var/lib/check_mk/counters
+	chown nagios:nagios /var/lib/check_mk/rrd
+
+	chown nagios:www-data /var/lib/check_mk/logwatch
+	chmod 0770            /var/lib/check_mk/logwatch
+
+	# FIXME: This should probably be somewhere else
+	chown root:nagios /usr/lib/nagios/plugins/check_icmp
+	chmod 4750        /usr/lib/nagios/plugins/check_icmp
+	;;
+esac
+
+#DEBHELPER#
+
+exit 0

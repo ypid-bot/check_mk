@@ -1,0 +1,152 @@
+#!/usr/bin/python
+"""Hack to run mod_python script under plain old CGI
+
+In which we emulate just enough of the mod_python environment
+to get the check_mk web interface to run under lighttpd using CGI.
+"""
+# Copyright Geoffrey T. Dairiki (c) 2010.
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This code is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; see the file COPYING.  If not, write to
+# the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+# Boston, MA 02111-1307, USA.
+#
+###################################################################
+
+
+# Emulate "PythonHandler index" undef mod_python
+#
+PYTHON_HANDLER = 'index'
+
+import cgi, imp, os, sys, UserDict
+
+#
+# Construct fake apache and util modules
+#
+mod_python = imp.new_module('mod_python')
+mod_python.apache = imp.new_module('mod_python.apache')
+mod_python.util = imp.new_module('mod_python.util')
+
+mod_python.apache.OK = True
+mod_python.apache.APLOG_ERR = 1
+
+def log_error(message, level):
+    print >>sys.stderr, message
+mod_python.apache.log_error = log_error
+
+mod_python.util.parse_qs = cgi.parse_qs
+
+sys.modules['mod_python.util'] = mod_python.util
+sys.modules['mod_python.apache'] = mod_python.apache
+sys.modules['mod_python'] = mod_python
+
+
+def _normcase (header):
+    return '-'.join([ word.capitalize()
+                      for word in header.split('-') ])
+
+class FakeTable (UserDict.DictMixin):
+    def __init__(self):
+        self._data = {}
+
+    def __getitem__(self, key):
+        return self._data[_normcase(key)]
+
+    def __setitem__(self, key, item):
+        if not isinstance(item, basestring):
+            raise ValueError, "values must be strings"
+        self._data[_normcase(key)] = item
+
+    def __delitem__(self, key):
+        del self._data[_normcase(key)]
+
+    def keys(self):
+        return self._data.keys()
+
+    def add(self, key, val):
+        if not isinstance(val, basestring):
+            raise ValueError, "values must be strings"
+        current = self.get(key)
+        if current is None:
+            self[key] = val
+        elif type(current) is list:
+            current.append(val)
+        else:
+            self[key] = [ current, val ]
+        
+    
+class FakeRequest (object):
+    """A fake mod_python request object
+    """
+    def __init__(self):
+        self.headers_out = FakeTable()
+        self._headers_sent = False
+        
+    @property
+    def args(self):
+        return os.environ.get('QUERY_STRING', '')
+
+    @property
+    def filename(self):
+        return os.environ['SCRIPT_FILENAME']
+
+    @property
+    def uri(self):
+        uri = os.environ['REQUEST_URI']
+        # Strip query, if present
+        q = uri.find("?")
+        if q >= 0:
+            uri = uri[:q]
+        return uri
+
+    @property
+    def user(self):
+        return os.environ.get('REMOTE_USER', '')
+
+    def _set_content_type(self, ctype):
+        self.headers_out['Content-Type'] = ctype
+    def _get_content_type(self):
+        return self.headers_out.get('Content-Type')
+    content_type = property(_get_content_type, _set_content_type)
+        
+    def _send_headers(self):
+        self.headers_out.setdefault('Content-Type', 'text/html')
+        for hdr, vals in self.headers_out.iteritems():
+            if type(vals) is not list:
+                vals = [ vals ]
+            for val in vals:
+                sys.stdout.write("%s: %s\n" % (hdr, val))
+        sys.stdout.write("\n")
+        self._send_headers = lambda : None
+
+    def write(self, string, flush=1):
+        self._send_headers()
+        sys.stdout.write(string)
+        if flush:
+            sys.stdout.flush()
+
+
+req = FakeRequest()
+try:
+    cwd = os.getcwd()
+    sys.path[0] = cwd
+    handler = imp.load_module(PYTHON_HANDLER,
+                              *imp.find_module(PYTHON_HANDLER, [cwd])).handler
+
+    rv = handler(req)
+except Exception, e:
+    print >>sys.stderr, e
+else:
+    if rv is not mod_python.apache.OK:
+        print >>sys.stderr, \
+              "%s.handler returned %r (not OK)" % (PYTHON_HANDLER, rv)

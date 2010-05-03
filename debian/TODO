@@ -1,0 +1,38 @@
+# -*-org-*-
+* Package pnp4nagios?
+
+  The require or recommend it 
+
+* check-mk-agent: add debconf question as to whether to use caching agent
+  (Then mangle xinetd.conf appropriately.)
+
+* multisite: need to insert configuration line in nagios.cfg
+
+  broker_module=/usr/lib/check_mk/livestatus.o /var/lib/nagios3/rw/live
+
+* Deal with lintian messages
+
+  W: check-mk-livestatus: binary-without-manpage usr/bin/unixcat
+  W: check-mk-agent: binary-without-manpage usr/bin/check_mk_agent
+  W: check-mk-agent: binary-without-manpage usr/bin/check_mk_caching_agent
+  W: check-mk-agent: binary-without-manpage usr/bin/waitmax
+
+* The data in /usr/share/doc/check-mk/checks/ should probably be elsewhere
+
+  Though I'm unsure about that.   Maybe it's fine.
+
+* Move logwatch state file out of /etc (into /var/state or maybe /var/lib)
+  (/etc/... should all be manually editable stuff)
+
+* Figure out where to put stuff in htdocs.tar.gz
+  
+  This provides the logwatch viewing/cleanup functionality via
+  logwatch.php.
+
+  The same functionality is provided by multisite (if installed)
+  via the URL /check_mk/logwatch.py, which is what everything seems
+  configured to use.
+
+  For now, don't even package the htdocs stuff.   If needed, it
+  should probably be in its own package (which would conflict with
+  multisite.)

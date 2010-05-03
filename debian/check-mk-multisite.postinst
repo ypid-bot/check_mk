@@ -1,0 +1,30 @@
+#! /bin/sh
+
+# Abort if any command returns an error value
+set -e
+
+package=check-mk-multisite
+
+install_ucf () {
+    target=$1
+    dist_conf=${2:-${target##*/}}
+    examplesdir=/usr/share/doc/$package/examples
+
+    ucf --three-way --debconf-ok $examplesdir/$dist_conf $target
+    ucfr $package $target
+}
+
+case "$1" in
+    configure)
+	install_ucf /etc/check_mk/multisite.mk
+	install_ucf /etc/check_mk/apache2.conf
+	install_ucf /etc/check_mk/lighttpd.conf
+
+	chown www-data:www-data /var/lib/check_mk/web
+
+	;;
+esac
+
+#DEBHELPER#
+
+exit 0

@@ -1,0 +1,6 @@
+var/lib/check_mk/autochecks
+var/lib/check_mk/cache
+var/lib/check_mk/counters
+var/lib/check_mk/logwatch
+var/lib/check_mk/precompiled
+var/lib/check_mk/rrd

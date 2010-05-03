@@ -1,6 +1,61 @@
-check-mk for Debian
--------------------
+Debian packages of check_mk
+===========================
 
-<possible notes regarding this package - if none, delete this file>
+Check_mk is a Nagios plugin written and maintained by Mathias Kettner.
+Refer to http://mathias-kettner.de/check_mk.html for more information.
 
- -- Mathias Kettner <mk@mathias-kettner.de>  Wed, 01 Jul 2009 15:52:55 +0200
+
+Notes on the packaging
+======================
+
+I've split the check_mk distribution into five packages:
+
+  - check-mk
+
+    This includes the check_mk command-line program and Nagios plugin.
+    You'll want to install this on your Nagios server host.
+
+  - check-mk-multisite
+
+    A fancy new web interface for viewing Nagios information.
+
+  - check-mk-livstatus
+
+    This is the livestatus module for Nagios.  It provides fast access
+    to status and historic data.   This package is required by
+    check-mk-multisite
+
+  - check-mk-agent
+
+    The check_mk agent.  You need to install this on hosts which you'd
+    like to monitor.
+
+  - check-mk-agent-logwatch
+
+    The logwatch plugin for the agent.
+
+
+Specific Notes
+==============
+
+Configuring the "multisite" web interface
+-----------------------------------------
+
+Multisite requires the livestatus Nagios module.   To get this to work,
+you need to edit /etc/nagios3/nagios.cfg and add the line:
+
+  broker_module=/usr/lib/check_mk/livestatus.o /var/lib/nagios3/rw/live
+
+More at: http://mathias-kettner.de/checkmk_livestatus.html
+
+
+Multisite is written to run under Apache's mod_python.  In this package,
+I've also included a wrapper which (for me, at least) is sufficient to
+get multisite running as a plain CGI app.   The wrapper is installed
+in /usr/share/check_mk/web/fake_mod_python, and an example lighttpd
+config file is installed at /etc/check_mk/lighttpd.conf (also available
+in /usr/share/doc/check-mk-multisite/examples/.)
+
+
+
+ -- Geoffrey T. Dairiki <dairiki@dairiki.org>, Tue,  4 May 2010 10:19:11 -0700

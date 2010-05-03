@@ -1,0 +1,49 @@
+#! /bin/sh
+
+# Abort if any command returns an error value
+set -e
+
+# The stuff that the debhelper scripts add below use debconf.
+# If we don't hook up to debconf here at the top of the module, there's
+# some sort of fd hell that arises which causes the script to exit
+# with exit code 128.
+#
+# Anyhow, make sure to leave this line...
+. /usr/share/debconf/confmodule
+
+package=check-mk-agent
+
+purge_ucf () {
+    target=$1
+
+    for ext in '~' '%' .bak .ucf-new .ucf-old .ucf-dist
+    do
+	rm -f $target$ext
+    done
+    rm -f $target
+
+    if which ucf >/dev/null; then
+	ucf --purge $target
+    fi    
+    if which ucfr >/dev/null; then
+	ucfr --purge $package $target
+    fi    
+}
+
+xinetd_conf=
+
+case "$1" in
+    purge)
+	purge_ucf /etc/xinetd.d/check_mk_agent
+
+	if [ -f /etc/init.d/xinetd ]
+	then
+	    invoke-rc.d xinetd reload
+	fi
+
+	;;
+esac
+
+#DEBHELPER#
+
+exit 0

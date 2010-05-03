@@ -1,0 +1,2 @@
+etc/check_mk/check_mk_templates.cfg   etc/nagios3/conf.d/check_mk_templates.cfg
+var/lib/check_mk/check_mk_objects.cfg etc/nagios3/conf.d/check_mk_objects.cfg

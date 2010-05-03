@@ -1,29 +1,5 @@
-check-mk (1.0.37) unstable; urgency=low
+check-mk (1.1.4~git-gtd.1) stable; urgency=low
 
-  * packaged new version
+  * Debianized.
 
- -- Mathias Kettner <mk@mathias-kettner.de>  Fr, 25 Sep 2009 19:45:15 +0200
-
-check-mk (1.0.36) unstable; urgency=low
-
-  * packaged new version
-
- -- Mathias Kettner <mk@mathias-kettner.de>  Tue, 17 Sep 2009 19:45:15 +0200
-
-check-mk (1.0.35) unstable; urgency=low
-
-  * packaged new version
-
- -- Mathias Kettner <mk@mathias-kettner.de>  Tue, 04 Aug 2009 09:45:15 +0200
-
-check-mk (1.0.34) unstable; urgency=low
-
-  * packaged new version
-
- -- Mathias Kettner <mk@mathias-kettner.de>  Wed, 16 Jul 2009 15:52:55 +0200
-
-check-mk (1.0.34rc-1) unstable; urgency=low
-
-  * First try to package according to Debian standards
-
- -- Mathias Kettner <mk@mathias-kettner.de>  Wed, 01 Jul 2009 15:52:55 +0200
+ -- Geoffrey T. Dairiki <dairiki@dairiki.org>  Tue, 04 May 2010 15:24:20 -0700

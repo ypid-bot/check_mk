@@ -1,0 +1,7 @@
+usr/bin/check_mk
+usr/share/check_mk/agents
+usr/share/check_mk/checks
+usr/share/check_mk/modules
+usr/share/check_mk/pnp-templates
+
+etc/check_mk/conf.d

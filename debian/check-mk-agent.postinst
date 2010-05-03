@@ -1,0 +1,54 @@
+#! /bin/sh
+
+# Abort if any command returns an error value
+set -e
+
+. /usr/share/debconf/confmodule
+
+package=check-mk-agent
+
+install_ucf () {
+    target=$1
+    dist_conf=${2:-${target##*/}}
+    examplesdir=/usr/share/doc/$package/examples
+
+    ucf --three-way --debconf-ok $examplesdir/$dist_conf $target
+    ucfr $package $target
+}
+
+
+
+case "$1" in
+    configure)
+	install_ucf /etc/xinetd.d/check_mk_agent xinetd.conf
+
+	;;
+esac
+
+case "$1" in
+    configure|reconfigure)
+
+	db_get check-mk-agent/nagios-server-address
+	only_from="$RET"
+	db_stop
+
+	perl -pi -e '
+	    BEGIN { $val = shift }
+	    if (/^\s*{/ .. /^\s*}/) {
+		$seen ||= s/^(\s* only_from \s*)=.*/$1= $val/x;
+	    }
+	    if (/^\s*}/ && !$seen) {
+		print "\tonly_from\t= $val\n";
+	    }
+	  ' "$only_from" /etc/xinetd.d/check_mk_agent
+
+	if [ -f /etc/init.d/xinetd ]
+	then
+	    invoke-rc.d xinetd reload
+	fi
+	;;
+esac
+
+#DEBHELPER#
+
+exit 0

@@ -1,21 +1,88 @@
 Source: check-mk
 Section: net
-Priority: optional
-Maintainer: Mathias Kettner <mk@mathias-kettner.de>
-Build-Depends: debhelper (>= 7)
-Standards-Version: 3.7.3
-Homepage: http://mathias-kettner.de/check_mk
+Priority: extra
+Maintainer: Geoffrey T. Dairiki <dairiki@dairiki.org>
+Build-Depends: debhelper (>= 7), po-debconf, dietlibc-dev
+Build-Depends-Indep: automake
+Standards-Version: 3.8.0
+Homepage: http://mathias-kettner.de/check_mk.html
 
 Package: check-mk
 Architecture: all
-Depends: python
-Recommends: nagios3
-Description: Remote monitorin addon for Nagios
- check_mk is a general purpose Nagios-plugin for retrieving data. It
- adopts a new approach for collecting data from operating systems and
- network components. It obsoletes NRPE, check_by_ssh, NSClient, and
- check_snmp and it has many benefits, the most important of which are
- significant reduction of CPU usage on the Nagios host and automatic
- inventory of items to be checked on hosts. The larger your Nagios
- installation is, the more helpful these improvements.
+Depends: python, ucf (>= 0.8), ${shlibs:Depends}, ${misc:Depends}
+Recommends: check-mk-agent, check-mk-multisite
+Enhances: nagios3
+Description: A general purpose Nagios-plugin for retrieving data
+ Check_mk adopts a new a approach for collecting data from operating
+ systems and network components. It obsoletes NRPE, check_by_ssh,
+ NSClient and check_snmp. It has many benefits, the most important of
+ which are:
+ .
+    Significant reduction of CPU usage on the Nagios host.
+ .
+    Automatic inventory of items to be checked on hosts.
+ .
+ The larger your Nagios installation is, the more important get these
+ points. In fact check_mk enables you to implement a monitoring
+ environment exceeding 20.000 checks/min on the first hand.
 
+Package: check-mk-agent
+Architecture: any
+Depends: ucf (>= 0.8), debconf (>= 0.28), ${shlibs:Depends}, ${misc:Depends}
+Recommends: xinetd
+Suggests: check-mk-agent-logwatch
+Description: A general purpose Nagios-plugin for retrieving data
+ Check_mk adopts a new a approach for collecting data from operating
+ systems and network components. It obsoletes NRPE, check_by_ssh,
+ NSClient and check_snmp. It has many benefits, the most important of
+ which are:
+ .
+    Significant reduction of CPU usage on the Nagios host.
+ .
+    Automatic inventory of items to be checked on hosts.
+ .
+ The larger your Nagios installation is, the more important get these
+ points. In fact check_mk enables you to implement a monitoring
+ environment exceeding 20.000 checks/min on the first hand.
+ .
+ This package includes the check_mk agent for Linux systems.
+
+Package: check-mk-agent-logwatch
+Architecture: all
+Depends: python, ucf (>= 0.8), check-mk-agent,
+  ${shlibs:Depends}, ${misc:Depends}
+Description: A general purpose Nagios-plugin for retrieving data
+ Check_mk adopts a new a approach for collecting data from operating
+ systems and network components. It obsoletes NRPE, check_by_ssh,
+ NSClient and check_snmp. It has many benefits, the most important of
+ which are:
+ .
+    Significant reduction of CPU usage on the Nagios host.
+ .
+    Automatic inventory of items to be checked on hosts.
+ .
+ The larger your Nagios installation is, the more important get these
+ points. In fact check_mk enables you to implement a monitoring
+ environment exceeding 20.000 checks/min on the first hand.
+ .
+ This package the logwatch plugin for the agent.
+
+Package: check-mk-multisite
+Architecture: all
+Depends: python, nagios3, ucf (>= 0.8), check-mk-livestatus,
+  ${shlibs:Depends}, ${misc:Depends}
+Recommends: apache2 | httpd
+Description: A new and innovative GUI for viewing Nagios status information
+ Check_MK introduces Multisite - a new and innovative GUI for viewing
+ Nagios status information and controlling your monitoring system. It
+ is based on MK Livestatus and aims at replacing the Nagios web GUI
+ (also known as "the CGIs"). Multisite supports distributed monitoring
+ in a very efficient way.
+
+Package: check-mk-livestatus
+Architecture: any
+Depends: nagios3, ${shlibs:Depends}, ${misc:Depends}
+Description: Provide immediate access to Nagios' status and log data
+ The fastest and easiest way of accessing status and historic data.
+ .
+ This is used by check-mk-multisite.

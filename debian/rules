@@ -1,71 +1,246 @@
 #!/usr/bin/make -f
-# -*- makefile -*-
 
-# Uncomment this to turn on verbose mode.
-#export DH_VERBOSE=1
+prefix		= /usr
+exec_prefix	= $(prefix)
+bindir		= $(exec_prefix)/bin
+libdir	 	= $(exec_prefix)/lib
+datarootdir 	= $(prefix)/share
+datadir 	= $(datarootdir)
+sysconfdir	= /etc
+agentsdir 	= $(datadir)/check_mk/agents
+checksdir	= $(datadir)/check_mk/checks
+webdir		= $(datadir)/check_mk/web
+docdir    	= $(datarootdir)/doc/check-mk
+
+INSTALL		= install
+INSTALL_PROGRAM	= $(INSTALL)
+INSTALL_DATA	= $(INSTALL) -m 0644
 
 
-configure: configure-stamp
-configure-stamp:
-	dh_testdir
-	touch configure-stamp
+BUILDDIR	= build
+CLEANFILES	= build
 
+ifneq (,$(wildcard setup.sh))
+# Building from tar distribution
+DISTDIR		= .
+CLEANFILES	+= livestatus.log livestatus.src
 
+else
+# Building from git
+DISTDIR		= ${BUILDDIR}/dist
+CLEANFILES	+= dist.tar.gz \
+		   livestatus/compile livestatus/configure \
+		   livestatus/aclocal.m4 \
+		   $(shell find livestatus -name \*.in)
+
+${DISTDIR}:
+	$(MAKE) DISTNAME=dist dist
+	test -d ${BUILDDIR} || mkdir ${BUILDDIR}
+	tar xfz dist.tar.gz -C ${BUILDDIR}
+endif
+
+# To build only specific packages, list them here
+#DEB_PACKAGES = check-mk-agent check-mk-agent-logwatch
+
+ifdef DEB_PACKAGES
+override \
+  EXCLUDE_PACKAGES = $(filter-out ${DEB_PACKAGES}, $(shell dh_listpackages))
+else 
+DEB_PACKAGES	 := $(filter-out ${EXCLUDE_PACKAGES}, $(shell dh_listpackages))
+endif
+
+dh_options	:= ${DH_OPTIONS} --sourcedir=${BUILDDIR}
+export DH_OPTIONS = ${dh_options} $(addprefix -N, ${EXCLUDE_PACKAGES})
+
+ifeq (,$(filter check-mk-livestatus, ${DEB_PACKAGES}))
+# Only building agent, don't do full install	
+enable_livestatus = no
+else
+enable_livestatus = yes
+endif
+
+.PHONY: build
 build: build-stamp
+build-stamp: ${DISTDIR}
+	dh build --before dh_auto_configure
+#	Don't do these.  Dh_auto_build, in particular, does bad things	
+	dh_auto_configure --no-act
+	dh_auto_build --no-act
+	dh_auto_test --no-act
+	dh build
 
-build-stamp: configure-stamp  
-	dh_testdir
+	cd ${DISTDIR} && \
+	DESTDIR=$(CURDIR)/${BUILDDIR} \
+	HOME=$(CURDIR)/${BUILDDIR} \
+	docdir="${docdir}" \
+	checkmandir="${docdir}/checks" \
+	nagios_binary='/usr/sbin/nagios3' \
+	nagios_config_file='/etc/nagios3/nagios.cfg' \
+	nagconfdir='/var/lib/check_mk' \
+	nagios_startscript='/etc/init.d/nagios3' \
+	nagiosurl='/nagios3' \
+	cgiurl='/cgi-bin/nagios3' \
+	nagpipe='/var/lib/nagios3/rw/nagios.cmd' \
+	nagios_status_file='/var/cache/nagios3/status.dat' \
+	check_icmp_path='/usr/lib/nagios/plugins/check_icmp' \
+	enable_livestatus='${enable_livestatus}' \
+	livesock='/var/lib/nagios3/rw/live' \
+	./setup.sh
+
+#       rebuild waitmax for current arch
+	make -C ${BUILDDIR}${agentsdir} clean
+	make -C ${BUILDDIR}${agentsdir}
+	install -d ${BUILDDIR}${bindir}
+	mv ${BUILDDIR}${agentsdir}/waitmax ${BUILDDIR}${bindir}/waitmax
+
+#	Fixup sample xinetd.conf
+#       Uncomment the only_from line and set it to allow connections
+#       solely from localhost.
+#
+#	XXX: It would be nice to do this as a patch on the upstream
+#	source, but due to the tarball-of-tarballs packaging scheme
+#	used by upstream, that's not really doable.
+	perl -pi -e 's/^(\s*)#?(\s*only_from\s*=).*/$$1$$2 127.0.0.1/' \
+	      ${BUILDDIR}${agentsdir}/xinetd.conf
+
 	touch $@
 
-clean: 
-	dh_testdir
-	dh_testroot
-	rm -f build-stamp configure-stamp
-	dh_clean 
+#	Fixup sample logwatch.cfg
+	perl -pi \
+	    -e 's|\A/var/log/messages\s*?\Z|/var/log/syslog|;' \
+	    -e 's|\A/var/log/kern\b.*\Z|/var/log/kern.log|;' \
+	  ${BUILDDIR}${agentsdir}/logwatch.cfg
 
-install: build
-	dh_testdir
-	dh_testroot
-	dh_clean -k 
-	dh_installdirs
-	DESTDIR=$(CURDIR)/debian/check-mk \
-	  nagconfdir=/etc/nagios3/conf.d \
-	  docdir=/usr/share/doc/check-mk \
-	  checkmandir=/usr/share/doc/check-mk/checkman \
-	  htdocsdir=/usr/share/nagios3/htdocs \
-	  pnptemplates=/usr/share/nagios3/htdocs/pnp/templates \
-	  nagpipe=/var/lib/nagios3/rw/nagios.cmd \
-	  nagiosurl=/nagios3 \
-	  cgiurl=/cgi-bin/nagios3 \
-	  check_icmp_path=/usr/lib/nagios/plugins/check_icmp \
-	  www_group=www-data \
-	  nagios_binary=/usr/sbin/nagios3 \
-	  nagios_startscript=/etc/init.d/nagios3 \
-	  nagios_config_file=/etc/nagios3/nagios.cfg \
-	  ./setup.sh
-	ln -sfn check-mk $(CURDIR)/debian/check-mk/usr/share/doc/check_mk
-	rm -f $(CURDIR)/debian/check-mk/etc/check_mk/*.{mk,cfg}-*
+.PHONY: install $(addprefix install/, ${DEB_PACKAGES})
+install: build install-stamp
+install-stamp:
+	dh install --until dh_auto_install
+	dh_auto_install --no-act
+	dh install --until dh_install
+
+#	Install README in all packages, not just first
+	dh_installdocs --all debian/README.Debian
+
+	debian/rules $(addprefix install/, ${DEB_PACKAGES})
+
+	dh install --remaining
+	touch $@
 
 
-binary-indep: build install
+# Set some target-specific variables for the install/% targets
+# These targets perform installation tasks for individual packages ---
+# set DH_OPTIONS so that debhelper will only work on the correct
+# package.
+install/%: export DH_OPTIONS  = ${dh_options} -p$(notdir $@)
+install/%: DEB_DESTDIR = $(CURDIR)/debian/$(notdir $@)
 
-# Build architecture-dependent files here.
-binary-arch: build install
-	dh_testdir
-	dh_testroot
-	dh_installchangelogs ChangeLog
-	dh_installdocs
-	dh_installexamples
-	dh_installman
-#	dh_link
-#	dh_strip
-#	dh_compress
-#	dh_fixperms
-	dh_installdeb
-#	dh_shlibdeps
-	dh_gencontrol
-	dh_md5sums
-	dh_builddeb
+install/check-mk:
+#	The checks are not really executable.
+#	Their permissions rightly do not have the execute permission
+#	set.   Lintian complains if they start with a hash-bang.
+#
+#	XXX: These fixes should be done as a patch on the upstream
+#	source, but due to the tarball-of-tarballs packaging scheme
+#	used by upstream, that's not really doable.
+	perl -0pi -e 's|\A#!/usr/bin/python\b||m' $(DEB_DESTDIR)$(checksdir)/*
 
-binary: binary-indep binary-arch
-.PHONY: build clean binary-indep binary-arch binary install configure
+#       fixup some permissions
+	for f in Makefile check_mk_agent.cc; do \
+	    chmod a-x ${DEB_DESTDIR}$(agentsdir)/windows/$$f; \
+	done
+
+	dh install --before dh_compress
+	dh_compress -Xusr/share/doc/check-mk/checks
+
+# Dh_fixperms thinks that check_mk_agent.solaris is a shared library
+# (it matches *.so*), and removes execute permissions from it.
+# (Then lintian complains about a script not having execute permissions.)
+	dh install --until dh_fixperms
+	chmod a+x ${DEB_DESTDIR}$(agentsdir)/check_mk_agent.solaris
+
+	dh_installexamples \
+	    ${BUILDDIR}/usr/share/doc/check-mk/check_mk_templates.cfg
+	dh_installexamples ${BUILDDIR}/etc/check_mk/main.mk
+
+install/check-mk-livestatus:
+	dh_install usr/bin/unixcat
+	dh_install usr/lib/check_mk/livestatus.o
+
+	dh_installdocs build/usr/share/doc/check-mk/livestatus
+
+install/check-mk-multisite:
+	dh_install usr/share/check_mk/web
+	dh_installdirs var/lib/check_mk/web
+
+	dh_installdirs etc/check_mk
+
+	dh_installexamples ${BUILDDIR}/etc/check_mk/multisite.mk
+
+	$(INSTALL_DATA) ${BUILDDIR}/etc/apache2/conf.d/zzz_check_mk.conf \
+	  ${DEB_DESTDIR}/usr/share/doc/check-mk-multisite/examples/apache2.conf
+	dh_link etc/check_mk/apache2.conf  etc/apache2/conf.d/zzz_check_mk.conf
+
+	dh_installexamples debian/lighttpd.conf
+	dh_link etc/check_mk/lighttpd.conf \
+		etc/lighttpd/conf-available/10-check_mk.conf
+
+	$(INSTALL_PROGRAM) debian/fake_mod_python \
+	   ${DEB_DESTDIR}$(webdir)/fake_mod_python
+
+install/check-mk-agent:
+	dh_install usr/bin/waitmax
+	for f in check_mk_agent check_mk_caching_agent; do \
+	    $(INSTALL_PROGRAM) ${BUILDDIR}$(agentsdir)/$$f.linux \
+		${DEB_DESTDIR}$(bindir)/$$f; \
+	done
+
+	dh_installdirs etc/check_mk/local_checks
+	$(INSTALL_DATA) debian/local_checks.README \
+		${DEB_DESTDIR}/etc/check_mk/local_checks/README
+	dh_link etc/check_mk/local_checks usr/lib/check_mk_agent/local
+
+	dh_installdirs etc/xinetd.d
+	dh_installexamples ${BUILDDIR}/usr/share/check_mk/agents/xinetd.conf
+
+	dh_installdocs build/usr/share/doc/check-mk/README
+
+install/check-mk-agent-logwatch:
+	dh_install \
+	  usr/share/check_mk/agents/mk_logwatch usr/lib/check_mk_agent/plugins
+	dh_installexamples ${BUILDDIR}/usr/share/check_mk/agents/logwatch.cfg
+
+.PHONY: binary-arch binary-indep binary
+binary-arch binary-indep: install
+	dh $@
+
+binary: binary-arch binary-indep
+
+.PHONY: clean
+clean:
+	dh clean
+	rm -rf ${CLEANFILES}
+
+
+# This target is just useful for the packager to check and see
+# what files might not have been packaged.
+#
+# It lists files which exist in the build directory (installed by
+# setup.sh) which can not be found in any of the package install
+# directories.
+#
+# It uses some heuristics to find some files, but it's not perfect.
+# Some files listed as missing may well have been installed, but
+# under a different name, or in a different location.
+.PHONY: list-missing
+list-missing: install
+	find ${BUILDDIR} \( -path build/dist -prune \) -o -printf "%P\n" | \
+	while read f; do \
+	  for pkg in ${DEB_PACKAGES}; do \
+	    t=$${f/doc\/check-mk/doc\/$$pkg}; \
+	    [ -e debian/$$pkg/$$t ] && continue 2; \
+	    [[ $$f =~ /doc/ ]] && \
+	      [ -e debian/$$pkg/$$t.gz ] && continue 2; \
+	    [ -e $$dest/$${f/doc\/check-mk/doc\/$$pkg}.gz ] && continue 2; \
+	  done; \
+	  echo $$f; \
+	done

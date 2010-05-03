@@ -1,0 +1,10 @@
+Template: check-mk-agent/nagios-server-address
+Type: string
+Default: 127.0.0.1
+_Description: Address of the Nagios server(s):
+ Xinetd will be configured to only accept connections to the check_mk
+ agent from addresses listed here.  Though you can probably get away
+ with using hostnames, usually it is better to list ip numbers here.
+ .
+ Leave blank to allow access from all hosts.  (Don't do that unless
+ you have a good firewall or are limiting access via some other method.)

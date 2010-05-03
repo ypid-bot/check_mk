@@ -1,0 +1,40 @@
+#! /bin/sh
+
+# Abort if any command returns an error value
+set -e
+
+package=check-mk-multisite
+
+purge_ucf () {
+    target=$1
+
+    for ext in '~' '%' .bak .ucf-new .ucf-old .ucf-dist
+    do
+	rm -f $target$ext
+    done
+    rm -f $target
+
+    if which ucf >/dev/null; then
+	ucf --purge $target
+    fi    
+    if which ucfr >/dev/null; then
+	ucfr --purge $package $target
+    fi    
+}
+
+case "$1" in
+    purge)
+	purge_ucf /etc/check_mk/multisite.mk
+	purge_ucf /etc/check_mk/apache2.conf
+	purge_ucf /etc/check_mk/lighttpd.conf
+
+	rm -rf /var/lib/check_mk/web
+
+	rmdir /var/lib/check_mk 2>/dev/null || true
+
+	;;
+esac
+
+#DEBHELPER#
+
+exit 0

@@ -1,0 +1,25 @@
+#! /bin/sh
+
+# Abort if any command returns an error value
+set -e
+
+package=check-mk-agent-logwatch
+
+install_ucf () {
+    target=$1
+    dist_conf=${2:-${target##*/}}
+    examplesdir=/usr/share/doc/$package/examples
+
+    ucf --three-way --debconf-ok $examplesdir/$dist_conf $target
+    ucfr $package $target
+}
+
+case "$1" in
+    configure)
+	install_ucf /etc/check_mk/logwatch.cfg
+	;;
+esac
+
+#DEBHELPER#
+
+exit 0
