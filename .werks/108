@@ -1,0 +1,8 @@
+Title: Prevent service notification on host alerts
+Level: 1
+Component: notifications
+Version: 1.2.3i7p3
+Date: 1386866484
+Class: fix
+
+In some case the notfication template for services was used, even is was an host problem.

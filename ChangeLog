@@ -1,4 +1,7 @@
 1.2.3i7p3:
+    Notifications:
+    * 0108 FIX: Prevent service notification on host alerts...
+
 
 1.2.3i7p2:
     Core & Setup:
