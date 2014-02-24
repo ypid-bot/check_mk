@@ -44,7 +44,8 @@ notification_logging    = 0
 
 # Settings for new rule based notifications
 enable_rulebased_notifications = False
-notification_fallback_email = ""
+notification_fallback_email    = ""
+notification_rules             = []
 
 # Notification Spooling
 notification_spooling = False
