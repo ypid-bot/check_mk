@@ -7331,6 +7331,224 @@ class CheckTypeGroupSelection(ElementSelection):
 
 
 #.
+#   .--Notifications-------------------------------------------------------.
+#   |       _   _       _   _  __ _           _   _                        |
+#   |      | \ | | ___ | |_(_)/ _(_) ___ __ _| |_(_) ___  _ __  ___        |
+#   |      |  \| |/ _ \| __| | |_| |/ __/ _` | __| |/ _ \| '_ \/ __|       |
+#   |      | |\  | (_) | |_| |  _| | (_| (_| | |_| | (_) | | | \__ \       |
+#   |      |_| \_|\___/ \__|_|_| |_|\___\__,_|\__|_|\___/|_| |_|___/       |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |  Module for managing the new rule based notifications.               |
+#   '----------------------------------------------------------------------'
+
+def mode_notifications(phase):
+    if phase == "title":
+        return _("Notification configuration")
+
+    elif phase == "buttons":
+        global_buttons()
+        html.context_button(_("New Rule"), make_link([("mode", "mkeventd_edit_rule")]), "new")
+        # html.context_button(_("Reset Counters"),
+        #      make_action_link([("mode", "mkeventd_rules"), ("_reset_counters", "1")]), "resetcounters")
+        return
+
+    # rules = load_notification_rules()
+    rules = []
+
+    if phase == "action":
+        return
+
+    ###    # Validation of input for rule simulation (no further action here)
+    ###    if html.var("simulate") or html.var("_generate"):
+    ###        event = vs_mkeventd_event.from_html_vars("event")
+    ###        vs_mkeventd_event.validate_value(event, "event")
+    ###        config.save_user_file("simulated_event", event)
+
+    ###    if html.has_var("_generate") and html.check_transaction():
+    ###        if not event.get("application"):
+    ###            raise MKUserError("event_p_application", _("Please specify an application name"))
+    ###        if not event.get("host"):
+    ###            raise MKUserError("event_p_host", _("Please specify a host name"))
+    ###        rfc = mkeventd.send_event(event)
+    ###        return None, "Test event generated and sent to Event Console.<br><pre>%s</pre>" % rfc
+
+
+    ###    if html.has_var("_delete"):
+    ###        nr = int(html.var("_delete"))
+    ###        rule = rules[nr]
+    ###        c = wato_confirm(_("Confirm rule deletion"),
+    ###                         _("Do you really want to delete the rule <b>%s</b> <i>%s</i>?" %
+    ###                           (rule["id"], rule.get("description",""))))
+    ###        if c:
+    ###            log_mkeventd("delete-rule", _("Deleted rule %s") % rules[nr]["id"])
+    ###            del rules[nr]
+    ###            save_mkeventd_rules(rules)
+    ###        elif c == False:
+    ###            return ""
+    ###        else:
+    ###            return
+
+    ###    elif html.has_var("_reset_counters"):
+    ###        c = wato_confirm(_("Confirm counter reset"),
+    ###                         _("Do you really want to reset all <i>Hits</i> counters to zero?"))
+    ###        if c:
+    ###            mkeventd.query("COMMAND RESETCOUNTERS")
+    ###            log_mkeventd("counter-reset", _("Resetted all rule hit counters to zero"))
+    ###        elif c == False:
+    ###            return ""
+    ###        else:
+    ###            return
+
+    ###    elif html.has_var("_copy_rules"):
+    ###        c = wato_confirm(_("Confirm copying rules"),
+    ###                         _("Do you really want to copy all event rules from the master and "
+    ###                           "replace your local configuration with them?"))
+    ###        if c:
+    ###            copy_rules_from_master()
+    ###            log_mkeventd("copy-rules-from-master", _("Copied the event rules from the master "
+    ###                         "into the local configuration"))
+    ###            return None, _("Copied rules from master")
+    ###        elif c == False:
+    ###            return ""
+    ###        else:
+    ###            return
+
+
+    ###    if html.check_transaction():
+    ###        if html.has_var("_move"):
+    ###            from_pos = int(html.var("_move"))
+    ###            to_pos = int(html.var("_where"))
+    ###            rule = rules[from_pos]
+    ###            del rules[from_pos] # make to_pos now match!
+    ###            rules[to_pos:to_pos] = [rule]
+    ###            save_mkeventd_rules(rules)
+    ###            log_mkeventd("move-rule", _("Changed position of rule %s") % rule["id"])
+    ###    return
+
+    # Check setting of global notifications. Are they enabled? If not, display
+    # a warning here. Note: this is a main.mk setting, so we cannot access this
+    # directly.
+    current_settings = load_configuration_settings()
+    if not current_settings.get("enable_rulebased_notifications"):
+        url = 'wato.py?mode=edit_configvar&varname=enable_rulebased_notifications'
+        html.show_warning(
+           _("Rule based notifications are disabled in your global settings. "
+             "The rules that you edit here will not have affect."
+             "<br><br>"
+             "You can change this setting <a href=\"%s\">here</a>.") % url)
+
+
+    if not rules:
+        html.message(_("You have not created any rules yet."))
+
+    # Simulator
+    # event = config.load_user_file("simulated_event", {})
+    # html.begin_form("simulator")
+    # vs_mkeventd_event.render_input("event", event)
+    # forms.end()
+    # html.hidden_fields()
+    # html.button("simulate", _("Try out"))
+    # html.button("_generate", _("Generate Event!"))
+    # html.end_form()
+    # html.write("<br>")
+
+    # if html.var("simulate"):
+    #     event = vs_mkeventd_event.from_html_vars("event")
+    # else:
+    #     event = None
+
+    if rules:
+        table.begin(limit = None)
+
+        have_match = False
+        for nr, rule in enumerate(rules):
+            table.row()
+            delete_url = make_action_link([("mode", "mkeventd_rules"), ("_delete", nr)])
+            top_url    = make_action_link([("mode", "mkeventd_rules"), ("_move", nr), ("_where", 0)])
+            bottom_url = make_action_link([("mode", "mkeventd_rules"), ("_move", nr), ("_where", len(rules)-1)])
+            up_url     = make_action_link([("mode", "mkeventd_rules"), ("_move", nr), ("_where", nr-1)])
+            down_url   = make_action_link([("mode", "mkeventd_rules"), ("_move", nr), ("_where", nr+1)])
+            edit_url   = make_link([("mode", "mkeventd_edit_rule"), ("edit", nr)])
+            clone_url  = make_link([("mode", "mkeventd_edit_rule"), ("clone", nr)])
+
+            table.cell(_("Actions"), css="buttons")
+            html.icon_button(edit_url, _("Edit this rule"), "edit")
+            html.icon_button(clone_url, _("Create a copy of this rule"), "clone")
+            html.icon_button(delete_url, _("Delete this rule"), "delete")
+            if not rule is rules[0]:
+                html.icon_button(top_url, _("Move this rule to the top"), "top")
+                html.icon_button(up_url, _("Move this rule one position up"), "up")
+            else:
+                html.empty_icon_button()
+                html.empty_icon_button()
+
+            if not rule is rules[-1]:
+                html.icon_button(down_url, _("Move this rule one position down"), "down")
+                html.icon_button(bottom_url, _("Move this rule to the bottom"), "bottom")
+            else:
+                html.empty_icon_button()
+                html.empty_icon_button()
+
+            table.cell("")
+            if rule.get("disabled"):
+                html.icon(_("This rule is currently disabled and will not be applied"), "disabled")
+            elif event:
+                result = mkeventd.event_rule_matches(rule, event)
+                if type(result) != tuple:
+                    html.icon(_("Rule does not match: %s") % result, "rulenmatch")
+                else:
+                    cancelling, groups = result
+                    if have_match:
+                        msg = _("This rule matches, but is overruled by a previous match.")
+                        icon = "rulepmatch"
+                    else:
+                        if cancelling:
+                            msg = _("This rule does a cancelling match.")
+                        else:
+                            msg = _("This rule matches.")
+                        icon = "rulematch"
+                        have_match = True
+                    if groups:
+                        msg += _(" Match groups: %s") % ",".join([ g or _('&lt;None&gt;') for g in groups ])
+                    html.icon(msg, icon)
+
+            table.cell(_("ID"), '<a href="%s">%s</a>' % (edit_url, rule["id"]))
+
+            if rule.get("drop"):
+                table.cell(_("Priority"), _("DROP"), css="state statep")
+            else:
+                txt = {0:_("OK"), 1:_("WARN"), 2:_("CRIT"), 3:_("UNKNOWN"), -1:_("(syslog)")}[rule["state"]]
+                table.cell(_("Priority"), txt,  css="state state%d" % rule["state"])
+
+            # Syslog priority
+            if "match_priority" in rule:
+                prio_from, prio_to = rule["match_priority"]
+                if prio_from == prio_to:
+                    prio_text = mkeventd.syslog_priorities[prio_from][1]
+                else:
+                    prio_text = mkeventd.syslog_priorities[prio_from][1][:2] + ".." + \
+                                mkeventd.syslog_priorities[prio_to][1][:2]
+            else:
+                prio_text = ""
+            table.cell(_("Priority"), prio_text)
+
+            # Syslog Facility
+            table.cell(_("Facility"))
+            if "match_facility" in rule:
+                facnr = rule["match_facility"]
+                html.write("%s" % dict(mkeventd.syslog_facilities)[facnr])
+
+            table.cell(_("Service Level"),
+                      dict(mkeventd.service_levels()).get(rule["sl"], rule["sl"]))
+            if defaults.omd_root:
+                hits = rule.get('hits')
+                table.cell(_("Hits"), hits != None and hits or '', css="number")
+            table.cell(_("Description"), rule.get("description"))
+            table.cell(_("Text to match"), rule.get("match"))
+        table.end()
+
+#.
 #   .--Timeperiods---------------------------------------------------------.
 #   |      _____ _                                _           _            |
 #   |     |_   _(_)_ __ ___   ___ _ __   ___ _ __(_) ___   __| |___        |
@@ -15385,6 +15603,7 @@ modes = {
    "edit_host_group"    : (["groups"], lambda phase: mode_edit_group(phase, "host")),
    "edit_service_group" : (["groups"], lambda phase: mode_edit_group(phase, "service")),
    "edit_contact_group" : (["users"], lambda phase: mode_edit_group(phase, "contact")),
+   "notifications"      : (["notifications"], mode_notifications),
    "timeperiods"        : (["timeperiods"], mode_timeperiods),
    "edit_timeperiod"    : (["timeperiods"], mode_edit_timeperiod),
    "sites"              : (["sites"], mode_sites),
@@ -15631,6 +15850,11 @@ def load_plugins():
     config.declare_permission("wato.users",
          _("User management"),
          _("This permission is needed for the modules <b>Users</b>, <b>Roles</b> and <b>Contact Groups</b>"),
+         [ "admin", ])
+
+    config.declare_permission("wato.notifications",
+         _("Notification configuration"),
+         _("This permission is needed for the new rule based notification configuration via the WATO module <i>Notifications</i>.</b>"),
          [ "admin", ])
 
     config.declare_permission("wato.snapshots",
