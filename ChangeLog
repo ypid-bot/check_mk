@@ -1,5 +1,6 @@
 1.2.3i7p3:
     Checks & Agents:
+    * 0154 FIX: zfsget: Fixed inventory of filesystems
     * 0155 FIX: mssql_counters: harded check agains odd agent output
 
     Notifications:
