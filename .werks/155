@@ -1,0 +1,10 @@
+Title: mssql_counters: harded check agains odd agent output
+Level: 1
+Component: checks
+Class: fix
+State: unknown
+Version: 1.2.3i7p3
+Date: 1398323787
+Targetversion: future
+
+
