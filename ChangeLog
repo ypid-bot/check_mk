@@ -2,6 +2,7 @@
     Checks & Agents:
     * 0154 FIX: zfsget: Fixed inventory of filesystems
     * 0155 FIX: mssql_counters: harded check agains odd agent output
+    * 0157 FIX: apc_symmetra_test: Fixed case of unkown last test date
 
     Notifications:
     * 0108 FIX: Prevent service notification on host alerts...
