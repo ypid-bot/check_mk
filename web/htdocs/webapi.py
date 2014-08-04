@@ -1,0 +1,67 @@
+#!/usr/bin/python
+# -*- encoding: utf-8; py-indent-offset: 4 -*-
+# +------------------------------------------------------------------+
+# |             ____ _               _        __  __ _  __           |
+# |            / ___| |__   ___  ___| | __   |  \/  | |/ /           |
+# |           | |   | '_ \ / _ \/ __| |/ /   | |\/| | ' /            |
+# |           | |___| | | |  __/ (__|   <    | |  | | . \            |
+# |            \____|_| |_|\___|\___|_|\_\___|_|  |_|_|\_\           |
+# |                                                                  |
+# | Copyright Mathias Kettner 2013             mk@mathias-kettner.de |
+# +------------------------------------------------------------------+
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+#
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# ails.  You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
+
+from lib import *
+import wato
+
+# Python 2.3 does not have 'set' in normal namespace.
+# But it can be imported from 'sets'
+try:
+    set()
+except NameError:
+    from sets import Set as set
+
+api_actions = {}
+loaded_with_language = False
+
+def load_plugins():
+    global loaded_with_language
+    if loaded_with_language == current_language:
+        return
+
+    load_web_plugins("webapi", globals())
+
+    # This must be set after plugin loading to make broken plugins raise
+    # exceptions all the time and not only the first time (when the plugins
+    # are loaded).
+    loaded_with_language = current_language
+
+    # Declare permissions for all dashboards
+    #config.declare_permission_section("webapi", _("Web API"), do_sort = True)
+    #for name, board in builtin_dashboards.items():
+    #    config.declare_permission("dashboard.%s" % name,
+    #            board["title"],
+    #            board.get("description", ""),
+    #            config.builtin_role_ids)
+
+    ## Make sure that custom views also have permissions
+    #config.declare_dynamic_permissions(lambda: visuals.declare_custom_permissions('dashboards'))
+
+def page_api():
+    action = html.var('action')
+    if action not in api_actions:
+        pass
+
