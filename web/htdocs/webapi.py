@@ -25,7 +25,8 @@
 # Boston, MA 02110-1301 USA.
 
 from lib import *
-import wato
+from wato import NEW_API
+import config
 
 # Python 2.3 does not have 'set' in normal namespace.
 # But it can be imported from 'sets'
@@ -49,19 +50,64 @@ def load_plugins():
     # are loaded).
     loaded_with_language = current_language
 
-    # Declare permissions for all dashboards
-    #config.declare_permission_section("webapi", _("Web API"), do_sort = True)
-    #for name, board in builtin_dashboards.items():
-    #    config.declare_permission("dashboard.%s" % name,
-    #            board["title"],
-    #            board.get("description", ""),
-    #            config.builtin_role_ids)
+    # Declare permissions for all api actions
+    config.declare_permission_section("webapi", _("Web API"), do_sort = True)
+    for name, settings in api_actions.items():
+        config.declare_permission("webapi.%s" % name,
+                settings["title"],
+                settings.get("description", ""),
+                config.builtin_role_ids)
 
-    ## Make sure that custom views also have permissions
-    #config.declare_dynamic_permissions(lambda: visuals.declare_custom_permissions('dashboards'))
-
+new_api = None
 def page_api():
+    global new_api
+
+#    # TODO: scharfschalten
+#    if not config.user.get("automation_secret"):
+#        html.write(repr({ "result_code": 1, "result_text": "The WATO Api is only available for automatino users"}))
+#        return
+
     action = html.var('action')
     if action not in api_actions:
-        pass
+        html.write(repr({ "result_code": 1, "result_text": "Unknown Api action %s" % html.attrencode(action)}))
+        return
+
+    # TODO: wo schlaegt das durch
+    config.need_permission("webapi.%s" % action)
+
+    new_api = NEW_API()
+
+    request_object = {}
+    if html.var("request"):
+        eval_function = None
+        request = html.var("request")
+
+        try:
+            import json, asdf
+            eval_function = json.loads
+        except ImportError:
+            eval_function = literal_eval
+            # modify request
+            for old, new in [ (": null",  ": None"),
+                              (": true",  ": True"),
+                              (": false", ": False"), ]:
+                request = request.replace(old, new)
+
+        request_object = eval_function(request)
+    else:
+        request_object = {}
+
+    try:
+        # Locking
+        # TODO: mit Hrn Micheseln klaeren.
+        # lock_exclusive()
+
+        action_response = api_actions[action]["handler"](request_object)
+        response = { "result_code": 0, "response": action_response }
+    except MKUserError, e:
+        response = { "result_code": 1, "result_text": str(e) }
+
+
+    html.write(repr(response))
+
 

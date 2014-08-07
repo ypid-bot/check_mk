@@ -10565,8 +10565,7 @@ def push_snapshot_to_site(site, do_restart):
     url = url_base + var_string
     response_text = upload_file(url, sync_snapshot_file(site["id"]), site.get('insecure', False))
     try:
-        response = eval(response_text)
-        return response
+        return eval(response_text)
     except:
         raise MKAutomationException(_("Garbled automation response from site %s: '%s'") %
             (site["id"], response_text))
@@ -16861,6 +16860,291 @@ api = API()
 
 
 
+
+
+
+#   .--API HELPERS---------------------------------------------------------.
+#   |       _    ____ ___   _   _ _____ _     ____  _____ ____  ____       |
+#   |      / \  |  _ \_ _| | | | | ____| |   |  _ \| ____|  _ \/ ___|      |
+#   |     / _ \ | |_) | |  | |_| |  _| | |   | |_) |  _| | |_) \___ \      |
+#   |    / ___ \|  __/| |  |  _  | |___| |___|  __/| |___|  _ < ___) |     |
+#   |   /_/   \_\_|  |___| |_| |_|_____|_____|_|   |_____|_| \_\____/      |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |                                                                      |
+#   '----------------------------------------------------------------------'
+
+# Checks if the given host_tags (type tag_agent) are all in known host tag groups and have a valid value
+def check_host_tags(host_tags):
+    for key, value in host_tags.items():
+        host_tag_group = key[4:]
+        for group_name, group_descr, group_tags in configured_host_tags:
+            if host_tag_group == group_name:
+                for name, descr, aux in group_tags:
+                    if name == value:
+                        break
+                else:
+                    raise MKUserError(None, _("Unknown host tag %s") % html.attrencode(value))
+                break
+        else:
+            raise MKUserError(None, _("Unknown host tag group %s") % html.attrencode(key))
+
+# TODO: rename
+def check_wato_folder(folder_name):
+    if not folder_name:
+        raise MKUserError(None, _("Folder name not set"))
+    else:
+        if ".." in folder_name:
+            raise MKUserError(None, _("Invalid folder: Contains .."))
+
+# Create wato folders up to the given path if they don't exists
+def create_wato_folders(path):
+    path_tokens = path.split("/")
+    current_folder = g_root_folder
+    for i in range(0, len(path_tokens)):
+        check_path = "/".join(path_tokens[:i+1])
+        if check_path in g_folders:
+            current_folder = g_folders[check_path]
+        else:
+            current_folder = create_wato_folder(current_folder, path_tokens[i])
+
+# Creates and returns an empty wato folder with the given title
+def create_wato_folder(parent, name, title = None):
+    global g_folders, g_folder
+    if g_folders.get(name):
+        # Folder already exists (might not be empty!)
+        return g_folders[name]
+
+    check_folder_permissions(g_folder, "write")
+
+    if parent and parent[".path"]:
+        newpath = parent[".path"] + "/" + name
+    else:
+        newpath = name
+
+    new_folder = {
+        ".name"      : name,
+        ".path"      : newpath,
+        "title"      : title or name.split("/")[-1],
+        "attributes" : {},
+        ".folders"   : {},
+        ".hosts"     : {},
+        "num_hosts"  : 0,
+        ".lock"      : False,
+    }
+    g_folders[newpath]            = new_folder
+    g_folder[".folders"][newpath] = new_folder
+    save_folder(new_folder)
+    return reload_folder(new_folder)
+
+def add_host_to_folder(folder, hostname, attributes):
+    hosts                = load_hosts(folder)
+    hosts[hostname]      = attributes
+    folder[".hosts"]     = hosts
+    folder["num_hosts"] += 1
+    save_folder_and_hosts(folder)
+
+    mark_affected_sites_dirty(folder, hostname)
+    message = _("Created new host %s.") % hostname
+    log_pending(AFFECTED, hostname, "create-host", message)
+
+    call_hook_hosts_changed(folder)
+
+# Updates
+def update_host_attributes(host, attributes):
+    # The site attribute might change. In that case also
+    # the old site of the host must be marked dirty.
+    mark_affected_sites_dirty(host[".folder"], host[".name"])
+
+    for key, value in attributes.items():
+        # If a host tag (e.g. tag_agent) is set to False, delete this key
+        if key.startswith("tag_") and value == False:
+            if key in host:
+                del host[key]
+        else:
+            host[key] = value
+
+    save_hosts(host[".folder"])
+    mark_affected_sites_dirty(host[".folder"], host[".name"])
+    log_pending(AFFECTED, host[".name"], "edit-host", _("edited properties of host [%s]") % host[".name"])
+
+    call_hook_hosts_changed(host[".folder"])
+
+def delete_host(host):
+    folder = host[".folder"]
+    if folder.get(".lock_hosts"):
+        raise MKUserError(None, _("Cannot delete host. Hosts in this folder are locked"))
+
+    hostname = host[".name"]
+
+    mark_affected_sites_dirty(folder, hostname)
+    log_pending(AFFECTED, hostname, "delete-host", _("Deleted host %s") % hostname)
+    del folder[".hosts"][hostname]
+    folder["num_hosts"] -= 1
+    save_folder_and_hosts(folder)
+    check_mk_automation(host[".siteid"], "delete-host", [hostname])
+    call_hook_hosts_changed(folder)
+
+# Specifically designed to check the validity of host data through web api calls
+def validate_api_host_data(hostname, attributes, folder = None, create_folders = True, what = ["hostname", "tags", "site", "folder"]):
+    if "hostname" in what:
+        check_new_hostname(None, hostname)
+
+    if "folder" in what:
+        if not os.path.exists(folder) and not create_folders:
+            raise MKUserError(None, _("Folder does not exist and no permission to create folders"))
+        check_wato_folder(folder)
+
+    if "tags" in what:
+        check_host_tags(dict( (key,value) for key, value in attributes.items() if key.startswith("tag_") and value != False))
+
+    if "site" in what:
+        if attributes.get("site"):
+            if attributes.get("site") not in config.allsites().keys():
+                raise MKUserError(None, _("Unknown site"))
+
+    return True
+
+# Parses the given attributes and returns those which can be processed by the web api
+# TODO: sollte eher eine exception werfen wenn ungültige werte enthalten sind.
+def get_valid_api_host_attributes(attributes):
+    result = {}
+    for key, value in attributes.items():
+        if key.startswith("tag_"):
+            result[key] = value
+        elif key in [ "ipaddress", "alias", "snmp_community", "parents", "site" ]:
+            result[key] = value
+
+    return result
+
+#   .--WEB API-------------------------------------------------------------.
+#   |             __        _______ ____       _    ____ ___               |
+#   |             \ \      / / ____| __ )     / \  |  _ \_ _|              |
+#   |              \ \ /\ / /|  _| |  _ \    / _ \ | |_) | |               |
+#   |               \ V  V / | |___| |_) |  / ___ \|  __/| |               |
+#   |                \_/\_/  |_____|____/  /_/   \_\_|  |___|              |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |                                                                      |
+#   '----------------------------------------------------------------------'
+
+class NEW_API:
+    def add_host(self, hostname, host_folder, host_attributes, create_folders = True, dry_run = False):
+        prepare_folder_info()
+        all_hosts = load_all_hosts()
+
+        ##### Validate host data #####
+        if hostname in all_hosts:
+            raise MKUserError(None, _("Hostname %s already exists") % html.attrencode(hostname))
+
+        validate_api_host_data(hostname, host_attributes, folder = host_folder, create_folders = create_folders)
+
+        # Dry run
+        # TODO: Evtl. in eigene Funktion auslagern
+        if dry_run:
+            return True
+
+        ##### Add host to WATO config #####
+        # Create folder(s)
+        create_wato_folders(host_folder)
+
+        # Add host to folder
+        folder     = g_folders[host_folder]
+        attributes = get_valid_api_host_attributes(host_attributes)
+        add_host_to_folder(folder, hostname, attributes)
+
+        return True
+
+    def edit_host(self, hostname, attributes):
+        # TODO: dry run
+        prepare_folder_info()
+        all_hosts = load_all_hosts()
+
+        ##### Validate host data #####
+        if hostname not in all_hosts:
+            raise MKUserError(None, _("Hostname %s does not exist") % html.attrencode(hostname))
+
+        validate_api_host_data(hostname, attributes, what = ["hostname", "tags", "site"])
+
+        ##### Update host attributes #####
+        host = all_hosts[hostname]
+        attributes = get_valid_api_host_attributes(attributes)
+        update_host_attributes(host, attributes)
+
+        return True
+
+    def get_host(self, hostname, effective_attr = False):
+        prepare_folder_info()
+        all_hosts = load_all_hosts()
+
+        if hostname not in all_hosts:
+            raise MKUserError(None, _("Hostname %s does not exist") % html.attrencode(hostname))
+
+        the_host = all_hosts[hostname]
+        if effective_attr:
+            the_host = effective_attributes(the_host, the_host[".folder"])
+
+        cleaned_host = dict([(k, v) for (k, v) in the_host.iteritems() if not k.startswith('.') ])
+        return cleaned_host
+
+    def delete_host(self, hostname):
+        prepare_folder_info()
+        all_hosts = load_all_hosts()
+
+        if hostname not in all_hosts:
+            raise MKUserError(None, _("Hostname %s does not exist") % html.attrencode(hostname))
+
+        delete_host(all_hosts[hostname])
+        return True
+
+    def discover_services(self, hostname, mode):
+        prepare_folder_info()
+        all_hosts = load_all_hosts()
+
+        if hostname not in all_hosts:
+            raise MKUserError(None, _("Hostname %s does not exist") % html.attrencode(hostname))
+
+        host = all_hosts[hostname]
+        counts, failed_hosts = check_mk_automation(host[".siteid"], "inventory", [ "@scan", "new" ] + [hostname])
+        if failed_hosts:
+            if not host.get("inventory_failed"):
+                host["inventory_failed"] = True
+                save_hosts(host[".folder"])
+            raise MKUserError(None, _("Failed to inventorize %s: %s") % (hostname, failed_hosts[hostname]))
+
+        return _("Service discovery successful. Added %d, Removed %d, Kept %d, New Count %d") % tuple(counts[hostname])
+
+    def activate_changes(self, sites, mode = "dirty"):
+        prepare_folder_info()
+
+        if mode == "specific":
+            for site in sites:
+                if site not in config.allsites().keys():
+                    raise MKUserError(None, _("Unknown site %s") % html.attrencode(site))
+
+        errors = []
+        if is_distributed():
+            for site in config.allsites().values():
+                if mode == "all" or (mode == "dirty" and site.get("need_restart")) or (site["id"] in sites):
+                    try:
+                        synchronize_site(site, True)
+                    except Exception, e:
+                        errors.append("%s: %s" % (site["id"], e))
+
+                    if not site_is_local(site["id"]):
+                        remove_sync_snapshot(site["id"])
+        else: # Single site
+            if mode == "all" or (mode == "dirty" and log_exists("pending")):
+                # TODO: ob das so stimmt...
+                restart_site("")
+
+        if not errors:
+            log_commit_pending()
+        else:
+            raise MKUserError(None, ", ".join(errors))
+        return True
+
+
 # internal helper functions for API
 def collect_hosts(folder):
     load_hosts(folder)
@@ -16992,43 +17276,6 @@ def validate_all_hosts(hostnames, force_all = False):
 #   '----------------------------------------------------------------------'
 
 import base64
-try:
-    import ast
-    literal_eval = ast.literal_eval
-except ImportError:
-    # Python <2.5 compatibility
-    try:
-        from compiler import parse
-        import compiler.ast
-        def literal_eval(node_or_string):
-            _safe_names = {'None': None, 'True': True, 'False': False}
-
-            if isinstance(node_or_string, basestring):
-                node_or_string = parse(node_or_string, mode='eval')
-            if isinstance(node_or_string, compiler.ast.Expression):
-                node_or_string = node_or_string.node
-
-            def _convert(node):
-                if isinstance(node, compiler.ast.Const) and isinstance(node.value,
-                        (basestring, int, float, long, complex)):
-                     return node.value
-                elif isinstance(node, compiler.ast.Tuple):
-                    return tuple(map(_convert, node.nodes))
-                elif isinstance(node, compiler.ast.List):
-                    return list(map(_convert, node.nodes))
-                elif isinstance(node, compiler.ast.Dict):
-                    return dict((_convert(k), _convert(v)) for k, v
-                                in node.items)
-                elif isinstance(node, compiler.ast.Name):
-                    if node.name in _safe_names:
-                        return _safe_names[node.name]
-                elif isinstance(node, compiler.ast.UnarySub):
-                    return -_convert(node.expr)
-                raise ValueError('malformed string')
-
-            return _convert(node_or_string)
-    except:
-        literal_eval = None
 
 def mk_eval(s):
     try:
