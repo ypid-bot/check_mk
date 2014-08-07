@@ -25,7 +25,7 @@
 # Boston, MA 02110-1301 USA.
 
 from lib import *
-from wato import NEW_API
+from wato import API
 import config
 
 # Python 2.3 does not have 'set' in normal namespace.
@@ -50,6 +50,11 @@ def load_plugins():
     # are loaded).
     loaded_with_language = current_language
 
+    # TODO: permissions fuer allg. benutzung
+    config.declare_permission("webapi.api_allowed", _("Web API access"),
+                                                    _("Allowed to access web API functions"),
+                              config.builtin_role_ids)
+
     # Declare permissions for all api actions
     config.declare_permission_section("webapi", _("Web API"), do_sort = True)
     for name, settings in api_actions.items():
@@ -58,56 +63,60 @@ def load_plugins():
                 settings.get("description", ""),
                 config.builtin_role_ids)
 
-new_api = None
+g_api = None
 def page_api():
-    global new_api
-
-#    # TODO: scharfschalten
-#    if not config.user.get("automation_secret"):
-#        html.write(repr({ "result_code": 1, "result_text": "The WATO Api is only available for automatino users"}))
-#        return
-
-    action = html.var('action')
-    if action not in api_actions:
-        html.write(repr({ "result_code": 1, "result_text": "Unknown Api action %s" % html.attrencode(action)}))
-        return
-
-    # TODO: wo schlaegt das durch
-    config.need_permission("webapi.%s" % action)
-
-    new_api = NEW_API()
-
-    request_object = {}
-    if html.var("request"):
-        eval_function = None
-        request = html.var("request")
-
-        try:
-            import json, asdf
-            eval_function = json.loads
-        except ImportError:
-            eval_function = literal_eval
-            # modify request
-            for old, new in [ (": null",  ": None"),
-                              (": true",  ": True"),
-                              (": false", ": False"), ]:
-                request = request.replace(old, new)
-
-        request_object = eval_function(request)
-    else:
-        request_object = {}
+    global g_api
 
     try:
-        # Locking
-        # TODO: mit Hrn Micheseln klaeren.
-        # lock_exclusive()
+# TODO: activate
+#        if not config.user.get("automation_secret"):
+#            raise MKAuthException("The WATO API is only available for automation users")
+
+        config.need_permission("webapi.api_allowed")
+
+        action = html.var('action')
+        if action not in api_actions:
+            raise MKUserError(None, "Unknown API action %s" % html.attrencode(action))
+
+        config.need_permission("webapi.%s" % action)
+
+        # Create API instance
+        g_api = API()
+
+        request_object = {}
+
+        if html.var("request"):
+            eval_function = None
+            request = html.var("request")
+
+            try:
+                import json, asdf
+                eval_function = json.loads
+            except ImportError:
+                eval_function = literal_eval
+                # modify request
+                for old, new in [ (": null",  ": None"),
+                                  (": true",  ": True"),
+                                  (": false", ": False"), ]:
+                    request = request.replace(old, new)
+
+            request_object = eval_function(request)
+        else:
+            request_object = {}
+
+        if api_actions[action].get("locking", True):
+            g_api.lock_wato()
 
         action_response = api_actions[action]["handler"](request_object)
         response = { "result_code": 0, "response": action_response }
-    except MKUserError, e:
+    except Exception, e:
         response = { "result_code": 1, "result_text": str(e) }
 
-
-    html.write(repr(response))
-
+    output_format = html.var("output_format", "json")
+    if output_format == "json":
+        # TODO: alternative json
+        import json
+        html.write(json.dumps(response))
+    else:
+        html.write(repr(response))
 

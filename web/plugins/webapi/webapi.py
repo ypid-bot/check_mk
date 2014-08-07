@@ -24,6 +24,7 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
+###############
 
 def action_add_host(request):
     if html.var("create_folders"):
@@ -47,7 +48,7 @@ def action_add_host(request):
     folder     = request.get("folder")
     attributes = request.get("attributes")
 
-    return new_api.add_host(hostname, folder, attributes, create_folders = create_folders)
+    return g_api.add_host(hostname, folder, attributes, create_folders = create_folders)
 
 api_actions["add_host"] = {
     "handler"     : action_add_host,
@@ -70,7 +71,7 @@ def action_edit_host(request):
     hostname   = request.get("hostname")
     attributes = request.get("attributes")
 
-    return new_api.edit_host(hostname, attributes)
+    return g_api.edit_host(hostname, attributes)
 
 api_actions["edit_host"] = {
     "handler"     : action_edit_host,
@@ -93,7 +94,7 @@ def action_get_host(request):
                 }
 
     hostname = request.get("hostname")
-    return new_api.get_host(hostname, effective_attributes)
+    return g_api.get_host(hostname, effective_attributes)
 
 api_actions["get_host"] = {
     "handler"     : action_get_host,
@@ -111,7 +112,7 @@ def action_delete_host(request):
                     }
 
     hostname = request.get("hostname")
-    return new_api.delete_host(hostname)
+    return g_api.delete_host(hostname)
 
 api_actions["delete_host"] = {
     "handler"     : action_delete_host,
@@ -123,7 +124,7 @@ api_actions["delete_host"] = {
 ###############
 
 def action_discover_services(request):
-    mode = html.var("var") and html.var("mode") or "NARF"
+    mode = html.var("var") and html.var("mode") or "new"
 
     if not request:
         request = {
@@ -131,7 +132,7 @@ def action_discover_services(request):
                     }
 
     hostname = request.get("hostname")
-    return new_api.discover_services(hostname, mode)
+    return g_api.discover_services(hostname, mode)
 
 api_actions["discover_services"] = {
     "handler"     : action_discover_services,
@@ -151,7 +152,7 @@ def action_activate_changes(request):
                 }
 
     sites = request.get("sites")
-    return new_api.activate_changes(sites, mode)
+    return g_api.activate_changes(sites, mode)
 
 api_actions["activate_changes"] = {
     "handler"     : action_activate_changes,
