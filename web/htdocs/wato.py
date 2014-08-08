@@ -1834,31 +1834,10 @@ def mode_editfolder(phase, new):
         if new:
             check_folder_permissions(g_folder, "write")
             check_user_contactgroups(attributes.get("contactgroups", (False, [])))
-            if g_folder[".path"]:
-                newpath = g_folder[".path"] + "/" + name
-            else:
-                newpath = name
-            new_folder = {
-                ".name"       : name,
-                ".path"       : newpath,
-                "title"      : title,
-                "attributes" : attributes,
-                ".folders"   : {},
-                ".hosts"     : {},
-                "num_hosts"  : 0,
-                ".lock"      : False,
-            }
-            g_folders[newpath] = new_folder
-            g_folder[".folders"][name] = new_folder
-            save_folder(new_folder)
-            reload_folder(new_folder)
-            call_hook_folder_created(new_folder)
-            # Note: sites are not marked as dirty.
-            # The creation of a folder without hosts has not effect on the
-            # monitoring.
-            log_pending(AFFECTED, new_folder, "new-folder", _("Created new folder %s") % title)
 
+            create_wato_folder(g_folder, name, title)
         else:
+            # TODO: migrate this block into own function edit_wato_folder(..)
             cgs_changed = get_folder_cgconf_from_attributes(attributes) != \
                           get_folder_cgconf_from_attributes(g_folder["attributes"])
             other_changed = attributes != g_folder["attributes"] and not cgs_changed
@@ -1885,7 +1864,7 @@ def mode_editfolder(phase, new):
                 # in Nagios-relevant attributes.
                 rewrite_config_files_below(g_folder) # due to inherited attributes
                 save_folder(g_folder)
-                # This updats g_folder and g_folders[...]
+                # This updates g_folder and g_folders[...]
                 g_folder = reload_folder(g_folder)
 
                 mark_affected_sites_dirty(g_folder)
@@ -1953,9 +1932,10 @@ def mode_editfolder(phase, new):
         html.end_form()
 
 
-def check_wato_foldername(htmlvarname, name):
-    if name in g_folder[".folders"]:
+def check_wato_foldername(htmlvarname, name, just_name = False):
+    if not just_name and name in g_folder:
         raise MKUserError(htmlvarname, _("A folder with that name already exists."))
+
     if not name:
         raise MKUserError(htmlvarname, _("Please specify a name."))
     if not re.match("^[-a-z0-9A-Z_]*$", name):
@@ -2104,21 +2084,9 @@ def mode_edithost(phase, new, cluster):
             go_to_diag     = html.var("diag_host")
             if html.check_transaction():
                 if new:
-                    g_folder[".hosts"][hostname] = host
-                    mark_affected_sites_dirty(g_folder, hostname)
-                    message = _("Created new host %s.") % hostname
-                    log_pending(AFFECTED, hostname, "create-host", message)
-                    g_folder["num_hosts"] += 1
+                    add_host_to_folder(g_folder, hostname, host)
                 else:
-                    # The site attribute might have changed. In that case also
-                    # the old site of the host must be marked dirty.
-                    mark_affected_sites_dirty(g_folder, hostname)
-                    g_folder[".hosts"][hostname] = host
-                    mark_affected_sites_dirty(g_folder, hostname)
-                    log_pending(AFFECTED, hostname, "edit-host", _("Edited properties of host [%s]") % hostname)
-                save_folder_and_hosts(g_folder)
-                reload_hosts(g_folder)
-                call_hook_hosts_changed(g_folder)
+                    set_host_attributes(g_folder[".hosts"][hostname], host)
 
             errors = validate_all_hosts([hostname]).get(hostname, []) + validate_host(g_folder[".hosts"][hostname], g_folder)
             if errors: # keep on this page if host does not validate
@@ -2259,7 +2227,7 @@ def check_edit_host_permissions(folder, host, hostname):
                   get_folder_cgconf_from_attributes(old_host)
     other_changed = old_host != host and not cgs_changed
     if other_changed:
-        check_host_permissions(hostname)
+        check_host_permissions(hostname, folder = folder)
     if cgs_changed \
          and True != check_folder_permissions(folder, "write", False):
          raise MKAuthException(_("Sorry. In order to change the permissions of a host you need write "
@@ -10609,6 +10577,21 @@ def synchronize_profile(site, user_id):
     update_replication_status(site["id"], {}, {"profile-sync": duration})
     return result
 
+# This is the single site activation mode
+def activate_changes():
+    try:
+        start = time.time()
+        check_mk_local_automation(config.wato_activation_method)
+        duration = time.time() - start
+        update_replication_status(None, {}, { 'act': duration })
+    except Exception:
+        if config.debug:
+            import traceback
+            raise MKUserError(None, "Error executing hooks: %s" %
+                              traceback.format_exc().replace('\n', '<br />'))
+        else:
+            raise
+
 # AJAX handler for javascript triggered wato activation
 def ajax_activation():
     try:
@@ -10620,19 +10603,8 @@ def ajax_activation():
         # Initialise g_root_folder, load all folder information
         prepare_folder_info()
 
-        # This is the single site activation mode
-        try:
-            start = time.time()
-            check_mk_local_automation(config.wato_activation_method)
-            duration = time.time() - start
-            update_replication_status(None, {}, { 'act': duration })
-        except Exception:
-            if config.debug:
-                import traceback
-                raise MKUserError(None, "Error executing hooks: %s" %
-                                  traceback.format_exc().replace('\n', '<br />'))
-            else:
-                raise
+        # Activate changes for single site
+        activate_changes()
 
         log_commit_pending() # flush logfile with pending actions
         log_audit(None, "activate-config", _("Configuration activated, monitoring server restarted"))
@@ -16751,163 +16723,6 @@ def get_host(self, folder, hostname):
     eff["name"] = hostname
     return eff
 
-#class OLD_API:
-#
-#    def get_all_users(self):
-#        return userdb.load_users()
-#
-#    # Get a (flat) dictionary containing all hosts with their *effective*
-#    # attributes (containing all inherited and default values where appropriate)
-#    # of the given folder. If folder is None, returns all hosts from the root folder
-#    # Folder must be returned by get_folder()
-#    def get_all_hosts(self, folder=None):
-#        if not folder:
-#            self.prepare_folder_info()
-#        return collect_hosts(folder or g_root_folder)
-#
-#    # Find a folder by its path. Raise an exception if it does
-#    # not exist.
-#    def get_folder(self, path):
-#        self.prepare_folder_info()
-#
-#        folder = g_folders.get(path)
-#        if folder:
-#            load_hosts(folder)
-#            return folder
-#        else:
-#            raise MKGeneralException("No WATO folder %s." % path)
-#
-#    # Get the number of hosts recursive from the given folder. Folder must be returned by get_folder()
-#    def num_hosts_in_folder(self, folder):
-#        return num_hosts_in(folder, True)
-#
-#    # Get all effective data of a host. Folder must be returned by get_folder()
-#    def get_host(self, folder, hostname):
-#        host = folder[".hosts"][hostname]
-#        eff = effective_attributes(host, folder)
-#        eff["name"] = hostname
-#        return eff
-#
-#    # Clean the attributes of the given host and returns the resulting host attributes
-#    # host must be returned by get_host() / get_all_hosts()
-#    def clean_host_attributes(self, host, attr):
-#        folder = g_folders.get(host["path"])
-#        load_hosts(folder)
-#        for entry in attr:
-#            try:
-#                del folder[".hosts"][host["name"]][entry]
-#            except:
-#                continue
-#
-#        save_folder_and_hosts(folder)
-#        return folder[".hosts"][host["name"]]
-#
-#    # Update the attributes of the given host and returns the resulting host attributes
-#    # host must be returned by get_host() / get_all_hosts()
-#    def update_host_attributes(self, host, attr):
-#        folder = g_folders.get(host["path"])
-#        load_hosts(folder)
-#        folder[".hosts"][host["name"]].update(attr)
-#        save_folder_and_hosts(folder)
-#        return folder[".hosts"][host["name"]]
-#
-#    # Rewrite the WATO configuration files
-#    def rewrite_configuration(self):
-#        self.prepare_folder_info()
-#        rewrite_config_files_below(g_root_folder)
-#
-#    # Return displayable information about host (call with result of get_host())
-#    def get_host_painted(self, host):
-#        result = []
-#        for attr, topic in host_attributes:
-#            attrname = attr.name()
-#            if attrname in host:
-#                tdclass, content = attr.paint(host[attrname], host["name"])
-#                result.append((attr.title(), content))
-#        return result
-#
-#    # Get information about the folder and directory tree.
-#    # This is useful for components that display hosts in
-#    # the tree (e.g. the status GUI).
-#    def get_folder_tree(self):
-#        load_all_folders()
-#        num_hosts_in(g_root_folder) # sets ".total_hosts"
-#        return g_root_folder
-#
-#    # sort list of folders or files by their title
-#    def sort_by_title(self, folders):
-#        def folder_cmp(f1, f2):
-#            return cmp(f1["title"].lower(), f2["title"].lower())
-#        folders.sort(cmp = folder_cmp)
-#        return folders
-#
-#    # Create an URL to a certain WATO folder.
-#    def link_to_path(self, path):
-#        return "wato.py?mode=folder&folder=" + html.urlencode(path)
-#
-#    # Create an URL to the edit-properties of a host.
-#    def link_to_host(self, hostname):
-#        return "wato.py?" + html.urlencode_vars(
-#        [("mode", "edithost"), ("host", hostname)])
-#
-#    # Same, but links to services of that host
-#    def link_to_host_inventory(self, hostname):
-#        return "wato.py?" + html.urlencode_vars(
-#        [("mode", "inventory"), ("host", hostname)])
-#
-#    # Return the title of a folder - which is given as a string path
-#    def get_folder_title(self, path):
-#        load_all_folders() # TODO: use in-memory-cache
-#        folder = g_folders.get(path)
-#        if folder:
-#            return folder["title"]
-#        else:
-#            return path
-#
-#    # Return a list with all the titles of the paths'
-#    # components, e.g. "muc/north" -> [ "Main Directory", "Munich", "North" ]
-#    def get_folder_title_path(self, path, withlinks=False):
-#        load_all_folders() # TODO: speed up!
-#        return folder_title_path(path, withlinks)
-#
-#    # Returns the number of not activated changes.
-#    def num_pending_changes(self):
-#        return len(parse_audit_log("pending"))
-#
-#    # BELOW ARE PRIVATE HELPER FUNCTIONS
-#    def prepare_folder_info(self):
-#        # Initialize attributes and load all folders
-#        declare_host_tag_attributes()
-#        declare_site_attribute()
-#        load_all_folders()
-#
-#
-#    def _cleanup_directory(self, thing):
-#        # drop 'parent' entry, recursively
-#        def drop_internal(folder):
-#            new_folder = {}
-#            new_folder.update(folder)
-#            if ".parent" in new_folder:
-#                del new_folder[".parent"]
-#            if ".folders" in new_folder:
-#                new_folder[".folders"] = drop_internal_dict(new_folder[".folders"])
-#            return new_folder
-#
-#        def drop_internal_dict(self, folderdict):
-#            new_dict = {}
-#            for name, thing in folderdict.items():
-#                new_dict[name] = drop_internal(thing)
-#            return new_dict
-#
-#        return drop_internal(thing)
-#
-#old_api = OLD_API()
-
-
-
-
-
-
 #   .--API HELPERS---------------------------------------------------------.
 #   |       _    ____ ___   _   _ _____ _     ____  _____ ____  ____       |
 #   |      / \  |  _ \_ _| | | | | ____| |   |  _ \| ____|  _ \/ ___|      |
@@ -16922,9 +16737,8 @@ def get_host(self, folder, hostname):
 # Checks if the given host_tags (type tag_agent) are all in known host tag groups and have a valid value
 def check_host_tags(host_tags):
     for key, value in host_tags.items():
-        host_tag_group = key[4:]
         for group_name, group_descr, group_tags in configured_host_tags:
-            if host_tag_group == group_name:
+            if key == group_name:
                 for name, descr, aux in group_tags:
                     if name == value:
                         break
@@ -16934,16 +16748,10 @@ def check_host_tags(host_tags):
         else:
             raise MKUserError(None, _("Unknown host tag group %s") % html.attrencode(key))
 
-# TODO: rename
-def check_wato_folder(folder_name):
-    if not folder_name:
-        raise MKUserError(None, _("Folder name not set"))
-    else:
-        if ".." in folder_name:
-            raise MKUserError(None, _("Invalid folder: Contains .."))
-
 # Create wato folders up to the given path if they don't exists
 def create_wato_folders(path):
+    global g_folders
+
     path_tokens = path.split("/")
     current_folder = g_root_folder
     for i in range(0, len(path_tokens)):
@@ -16951,16 +16759,13 @@ def create_wato_folders(path):
         if check_path in g_folders:
             current_folder = g_folders[check_path]
         else:
-            current_folder = create_wato_folder(current_folder, path_tokens[i])
+            check_folder_permissions(current_folder, "write")
+            current_folder = create_wato_folder(current_folder, path_tokens[i], path_tokens[i])
 
 # Creates and returns an empty wato folder with the given title
-def create_wato_folder(parent, name, title = None):
+# Write permissions are NOT checked!
+def create_wato_folder(parent, name, title):
     global g_folders, g_folder
-    if g_folders.get(name):
-        # Folder already exists (might not be empty!)
-        return g_folders[name]
-
-    check_folder_permissions(g_folder, "write")
 
     if parent and parent[".path"]:
         newpath = parent[".path"] + "/" + name
@@ -16970,19 +16775,28 @@ def create_wato_folder(parent, name, title = None):
     new_folder = {
         ".name"      : name,
         ".path"      : newpath,
-        "title"      : title or name.split("/")[-1],
+        "title"      : title or name,
         "attributes" : {},
         ".folders"   : {},
         ".hosts"     : {},
         "num_hosts"  : 0,
         ".lock"      : False,
+        ".parent"    : parent,
     }
-    g_folders[newpath]            = new_folder
-    g_folder[".folders"][newpath] = new_folder
-    save_folder(new_folder)
-    return reload_folder(new_folder)
 
-# TODO: lock hosts pruefen
+    save_folder(new_folder)
+    new_folder = reload_folder(new_folder)
+
+    call_hook_folder_created(new_folder)
+
+    # Note: sites are not marked as dirty.
+    # The creation of a folder without hosts has not effect on the
+    # monitoring.
+    log_pending(AFFECTED, new_folder, "new-folder", _("Created new folder %s") % title)
+
+    return new_folder
+
+# Adds a new host to the given folder
 def add_host_to_folder(folder, hostname, attributes):
     hosts                = load_hosts(folder)
     hosts[hostname]      = attributes
@@ -16990,33 +16804,44 @@ def add_host_to_folder(folder, hostname, attributes):
     folder["num_hosts"] += 1
     save_folder_and_hosts(folder)
 
-    mark_affected_sites_dirty(folder, hostname)
-    message = _("Created new host %s.") % hostname
-    log_pending(AFFECTED, hostname, "create-host", message)
+    log_pending(AFFECTED, hostname, "create-host",_("Created new host %s.") % hostname)
 
+    reload_hosts(folder)
+    mark_affected_sites_dirty(folder, hostname)
     call_hook_hosts_changed(folder)
 
-# Updates
-# TODO: lock hosts pruefen
+# Updates attributes of one host
 def update_host_attributes(host, attributes):
-    # The site attribute might change. In that case also
-    # the old site of the host must be marked dirty.
-    mark_affected_sites_dirty(host[".folder"], host[".name"])
+    cleaned_attr = dict([(k, v) for (k, v) in host.iteritems() if not k.startswith('.') ])
 
     for key, value in attributes.items():
         # If a host tag (e.g. tag_agent) is set to False, delete this key
         if key.startswith("tag_") and value == False:
-            if key in host:
-                del host[key]
+            if key in cleaned_attr:
+                del cleaned_attr[key]
         else:
-            host[key] = value
+            cleaned_attr[key] = value
 
+    set_host_attributes(host, cleaned_attr)
+
+# Sets attributes of one host
+def set_host_attributes(host, attributes):
+    hostname = host[".name"]
+
+    # The site attribute might change. In that case also
+    # the old site of the host must be marked dirty.
+    mark_affected_sites_dirty(host[".folder"], hostname)
+
+    host[".folder"][".hosts"][hostname] = attributes
     save_hosts(host[".folder"])
-    mark_affected_sites_dirty(host[".folder"], host[".name"])
-    log_pending(AFFECTED, host[".name"], "edit-host", _("edited properties of host [%s]") % host[".name"])
 
+    log_pending(AFFECTED, hostname, "edit-host", _("edited properties of host [%s]") % hostname)
+
+    reload_hosts(host[".folder"])
+    mark_affected_sites_dirty(host[".folder"], hostname)
     call_hook_hosts_changed(host[".folder"])
 
+# Deletes host from given folder
 def delete_host(host):
     folder = host[".folder"]
     if folder.get(".lock_hosts"):
@@ -17055,28 +16880,65 @@ class API:
             self.__all_hosts = load_all_hosts()
         return self.__all_hosts
 
-    def __validate_host_data(self, hostname, attributes = None, all_hosts = None, folder = None, create_folders = True,
-                             what = ["hostname", "hostexists", "tags", "site", "folder"]):
-        if "hostname" in what:
+    def __validate_host_data(self, hostname, attributes = {}, all_hosts = {},
+                                   host_foldername = None, create_folders = True, validate = []):
+        if "hostname" in validate:
             check_new_hostname(None, hostname)
 
-        if "hostexists" in what:
+        if "hostexists" in validate:
             if hostname in all_hosts:
                 raise MKUserError(None, _("Hostname %s already exists") % html.attrencode(hostname))
 
-        if "hostmissing" in what:
+        if "hostmissing" in validate:
             if hostname not in all_hosts:
                 raise MKUserError(None, _("Hostname %s does not exist") % html.attrencode(hostname))
 
-        if "folder" in what:
-            if not os.path.exists(folder) and not create_folders:
+        if "folder" in validate:
+            if not os.path.exists(host_foldername) and not create_folders:
                 raise MKUserError(None, _("Folder does not exist and no permission to create folders"))
-            check_wato_folder(folder)
+            host_folder_tokens = host_foldername.split("/")
+            for dir_token in host_folder_tokens:
+                check_wato_foldername(None, dir_token, just_name = True)
 
-        if "tags" in what:
-            check_host_tags(dict( (key,value) for key, value in attributes.items() if key.startswith("tag_") and value != False))
+        if "permissions_new" in validate or "permissions_edit" in validate:
+            # General permissions because of contact or role
+            if host_foldername in g_folders:
+                check_path = host_foldername
+            else:
+                if not host_foldername:
+                    if hostname in all_hosts:
+                        host_foldername = all_hosts[hostname][".folder"][".path"]
+                    else:
+                        raise MKUserError(None, _("Unable to determine folder for host %s") % html.attrencode(hostname))
 
-        if "site" in what:
+                # Find the 'nearest' folder and use it instead of the target folder
+                # If we can write there, we can also write in our upcoming folders
+                host_folder_tokens = host_foldername.split("/")
+                for i in range(len(host_folder_tokens), -1, -1):
+                    check_path = "/".join(host_folder_tokens[:i])
+                    if check_path in g_folders:
+                        break
+
+            check_folder = g_folders[check_path]
+
+            if "permissions_new" in validate:
+                check_new_host_permissions(check_folder, attributes, hostname)
+            else:
+                check_edit_host_permissions(check_folder, attributes, hostname)
+
+            # Check if folder or host file is locked
+            if host_foldername == check_path: # Target folder exists
+                if check_folder.get(".lock_hosts"):
+                    raise MKAuthException(_("Not allowed to change hosts.mk file. It is locked"))
+            else:
+                if check_folder.get(".lock_subfolders"):
+                    raise MKAuthException(_("Not allowed create subfolders"))
+
+
+        if "tags" in validate:
+            check_host_tags(dict((key[4:], value) for key, value in attributes.items() if key.startswith("tag_") and value != False))
+
+        if "site" in validate:
             if attributes.get("site"):
                 if attributes.get("site") not in config.allsites().keys():
                     raise MKUserError(None, _("Unknown site %s") % html.attrencode(attributes.get("site")))
@@ -17085,10 +16947,11 @@ class API:
 
     def __get_valid_api_host_attributes(self, attributes):
         result = {}
+
+        host_attribute_names = map(lambda (x, y): x.name(), host_attributes)
+
         for key, value in attributes.items():
-            if key.startswith("tag_"):
-                result[key] = value
-            elif key in [ "ipaddress", "alias", "snmp_community", "parents", "site" ]:
+            if key in host_attribute_names:
                 result[key] = value
 
         return result
@@ -17096,29 +16959,17 @@ class API:
     def lock_wato(self):
         lock_exclusive()
 
-    def add_host(self, hostname, host_folder, host_attributes, create_folders = True, dry_run = False):
+    def add_host(self, hostname, host_foldername, host_attr, create_folders = True, dry_run = False):
         prepare_folder_info()
         all_hosts = self.__get_all_hosts()
 
-        self.__validate_host_data(hostname, attributes = host_attributes, all_hosts = all_hosts,
-                                  folder = host_folder, create_folders = create_folders)
-
-        # Check if we will be able to write into the target folder
-        if host_folder in g_folders:
-            check_folder = g_folders[host_folder]
-        else:
-            # TODO: check if this is correct
-            # Find the 'nearest' folder and use it instead of the target folder
-            # If we can write there, we can also write in our upcoming folders
-            host_folder_tokens = host_folder.split("/")
-            for i in range(len(host_folder_tokens), -1, -1):
-                check_path = "/".join(host_folder_tokens[:i])
-                if check_path in g_folders:
-                    check_folder = g_folders[check_path]
-                    break
-
-        attributes = self.__get_valid_api_host_attributes(host_attributes)
-        check_new_host_permissions(check_folder, attributes, hostname)
+        ### VALIDATE ###
+        attributes = self.__get_valid_api_host_attributes(host_attr)
+        self.__validate_host_data(hostname, attributes      = attributes,
+                                            all_hosts       = all_hosts,
+                                            host_foldername = host_foldername,
+                                            create_folders  = create_folders,
+                                            validate = ["hostname", "hostexists", "tags", "site", "folder", "permissions_new"])
 
         # Dry run
         # TODO: Evtl. in eigene Funktion auslagern
@@ -17126,22 +16977,24 @@ class API:
         if dry_run:
             return
 
-        ##### Add host to WATO config #####
+        ### ACTION ###
         # Create folder(s) (only when they do not exist)
-        create_wato_folders(host_folder)
+        create_wato_folders(host_foldername)
 
-        # Add host to folder
-        folder     = g_folders[host_folder]
+        folder = g_folders[host_foldername]
         add_host_to_folder(folder, hostname, attributes)
 
         # Update all_hosts references for future function calls within the same request
         self.__get_all_hosts(True)
 
-    def edit_host(self, hostname, attributes, dry_run = False):
+    def edit_host(self, hostname, host_attr, dry_run = False):
         prepare_folder_info()
         all_hosts = self.__get_all_hosts()
 
-        self.__validate_host_data(hostname, attributes, all_hosts = all_hosts, what = ["hostmissing", "tags", "site"])
+        attributes = self.__get_valid_api_host_attributes(host_attr)
+        self.__validate_host_data(hostname, attributes = attributes,
+                                            all_hosts = all_hosts,
+                                            validate = ["hostmissing", "tags", "site", "permissions_edit"])
 
         # Dry run
         # TODO: Evtl. in eigene Funktion auslagern
@@ -17149,9 +17002,8 @@ class API:
         if dry_run:
             return
 
-        ##### Update host attributes #####
+        ### START ACTION ###
         host = all_hosts[hostname]
-        attributes = self.__get_valid_api_host_attributes(attributes)
         update_host_attributes(host, attributes)
 
         # Update all_hosts references for future function calls within the same request
@@ -17161,8 +17013,9 @@ class API:
         prepare_folder_info()
         all_hosts = self.__get_all_hosts()
 
-        self.__validate_host_data(hostname, all_hosts = all_hosts, what = ["hostmissing"])
+        self.__validate_host_data(hostname, all_hosts = all_hosts, validate = ["hostmissing"])
 
+        ### START ACTION ###
         the_host = all_hosts[hostname]
         if effective_attr:
             the_host = effective_attributes(the_host, the_host[".folder"])
@@ -17174,21 +17027,24 @@ class API:
         prepare_folder_info()
         all_hosts = self.__get_all_hosts()
 
-        self.__validate_host_data(hostname, all_hosts = all_hosts, what = ["hostmissing"])
+        self.__validate_host_data(hostname, all_hosts = all_hosts, validate = ["hostmissing", "permissions_edit"])
 
+        ### START ACTION ###
         delete_host(all_hosts[hostname])
 
         # Update all_hosts references for future function calls within the same request
         self.__get_all_hosts(True)
 
-    def discover_services(self, hostname, mode):
+    def discover_services(self, hostname, mode = "new"):
         prepare_folder_info()
         all_hosts = self.__get_all_hosts()
 
-        self.__validate_host_data(hostname, all_hosts = all_hosts, what = ["hostmissing"])
+        config.need_permission("wato.services")
+        self.__validate_host_data(hostname, all_hosts = all_hosts, validate = ["hostmissing"])
+        check_host_permissions(hostname, folder = all_hosts[hostname][".folder"])
 
+        ### START ACTION ###
         host = all_hosts[hostname]
-        # TODO: automation function mit mode draus machen. liefert table counts, failed hosts zurück
         counts, failed_hosts = check_mk_automation(host[".siteid"], "inventory", [ "@scan", mode ] + [hostname])
         if failed_hosts:
             if not host.get("inventory_failed"):
@@ -17198,18 +17054,28 @@ class API:
 
         return _("Service discovery successful. Added %d, Removed %d, Kept %d, New Count %d") % tuple(counts[hostname])
 
-    def activate_changes(self, sites, mode = "dirty"):
+    def activate_changes(self, sites, mode = "dirty", allow_foreign_changes = False):
         prepare_folder_info()
+
+        config.need_permission("wato.activate")
+
+        if foreign_changes():
+            if not config.may("wato.activateforeign"):
+                raise MKAuthException(_("You are not allowed to activate changes of other users."))
+            if not allow_foreign_changes:
+                raise MKAuthException(_("There are changes from other users and foreign changes "\
+                                        "are not allowed in this API call."))
 
         if mode == "specific":
             for site in sites:
                 if site not in config.allsites().keys():
                     raise MKUserError(None, _("Unknown site %s") % html.attrencode(site))
 
+        ### START ACTION ###
         errors = []
         if is_distributed():
             for site in config.allsites().values():
-                if mode == "all" or (mode == "dirty" and site.get("need_restart")) or (site["id"] in sites):
+                if mode == "all" or (mode == "dirty" and site.get("need_restart")) or (sites and site["id"] in sites):
                     try:
                         synchronize_site(site, True)
                     except Exception, e:
@@ -17219,15 +17085,11 @@ class API:
                         remove_sync_snapshot(site["id"])
         else: # Single site
             if mode == "all" or (mode == "dirty" and log_exists("pending")):
-                # TODO: ob das so stimmt...
-                restart_site("")
-            # TODO: Funktion draus bastelkn und wenns nach herrn michelsen geht auch benutzen!!111elfelf
-            #start = time.time()
-            #check_mk_local_automation(config.wato_activation_method)
-            #duration = time.time() - start
-            #update_replication_status(None, {}, { 'act': duration })
+                try:
+                    activate_changes()
+                except Exception, e:
+                    errors.append("%s: %s" % (site["id"], e))
 
-        # TODO: schau obs bei single site nicht schon oben passiert
         if not errors:
             log_commit_pending()
         else:

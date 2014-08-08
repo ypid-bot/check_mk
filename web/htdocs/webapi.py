@@ -50,17 +50,29 @@ def load_plugins():
     # are loaded).
     loaded_with_language = current_language
 
-    # TODO: permissions fuer allg. benutzung
-    config.declare_permission("webapi.api_allowed", _("Web API access"),
-                                                    _("Allowed to access web API functions"),
+    config.declare_permission("webapi.api_allowed", _("API accessible"),
+                                                    _("This permissions specifies if the role "\
+                                                      "is able to use web API functions at all"),
                               config.builtin_role_ids)
 
     # Declare permissions for all api actions
     config.declare_permission_section("webapi", _("Web API"), do_sort = True)
     for name, settings in api_actions.items():
+        full_description = "%s<br>API function <tt>{site}/check_mk/webapi.py&action=%s</tt>" % (settings.get("description",""), name)
+        example_request = settings.get("example_request")
+        if example_request:
+            full_description += "<br>"
+            if example_request[0]:
+                full_description += "<br>Optional GET parameters<br><table>"
+                for entry in example_request[0]:
+                    full_description += "<tr><td><tt>%s</tt></td><td>%s</td></tr>" % entry
+                full_description += "</table><br>"
+            if example_request[1]:
+                full_description += "Example request body:<br><pre>%s</pre>" % pprint.pformat(example_request[1])
+
         config.declare_permission("webapi.%s" % name,
                 settings["title"],
-                settings.get("description", ""),
+                full_description,
                 config.builtin_role_ids)
 
 g_api = None
@@ -68,9 +80,8 @@ def page_api():
     global g_api
 
     try:
-# TODO: activate
-#        if not config.user.get("automation_secret"):
-#            raise MKAuthException("The WATO API is only available for automation users")
+    #    if not config.user.get("automation_secret"):
+    #        raise MKAuthException("The WATO API is only available for automation users")
 
         config.need_permission("webapi.api_allowed")
 
@@ -107,9 +118,21 @@ def page_api():
         if api_actions[action].get("locking", True):
             g_api.lock_wato()
 
+        if html.var("debug_webapi"):
+            if api_actions[action]["example_request"]:
+                example_request = api_actions[action]["example_request"]
+                for entry, description in example_request[0]:
+                    key, value = entry.split("=")
+                    html.set_var(key, value)
+                request_object = example_request[1]
+
+
         action_response = api_actions[action]["handler"](request_object)
         response = { "result_code": 0, "response": action_response }
     except Exception, e:
+#        html.debug(e)
+#        import traceback
+#        html.debug(traceback.format_exc().replace("\n","<br>"))
         response = { "result_code": 1, "result_text": str(e) }
 
     output_format = html.var("output_format", "json")
