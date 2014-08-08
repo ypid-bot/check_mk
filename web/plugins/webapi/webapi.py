@@ -28,21 +28,9 @@
 
 def action_add_host(request):
     if html.var("create_folders"):
-        create_folders = bool(html.var("create_folders"))
+        create_folders = bool(int(html.var("create_folders")))
     else:
         create_folders = True
-
-    if not request:
-        request = { "attributes": {
-                         "tag_criticality": "prod",
-                         "tag_agent": "cmk-agent",
-                         "alias": "olalala",
-                         "ipaddress": "127.0.0.1",
-                         "site": "localsite"
-                       },
-                       "folder": "subfolder/ding/dong",
-                       "hostname": "dingdong3"
-                     }
 
     hostname   = request.get("hostname")
     folder     = request.get("folder")
@@ -51,23 +39,26 @@ def action_add_host(request):
     return g_api.add_host(hostname, folder, attributes, create_folders = create_folders)
 
 api_actions["add_host"] = {
-    "handler"     : action_add_host,
-    "title"       : _("Add a host to WATO"),
-    "description" : _("Add a host to WATO"),
-    "locking"     : True,
+    "handler"         : action_add_host,
+    "title"           : _("Add a host to WATO"),
+    "description"     : _("This webservice allows you to add a new host."),
+    "example_request" : ([("create_folders=1", _("Create unknown folders if set to 1(default)"))],
+                         { "attributes": {
+                                    "tag_criticality": "prod",
+                                    "tag_agent": "cmk-agent",
+                                    "alias": "Alias of testhost",
+                                    "ipaddress": "127.0.0.1",
+                                    "site": "localsite"
+                                },
+                          "folder": "windows/server",
+                          "hostname": "testhost"
+                         }),
+    "locking"         : True,
 }
 
 ###############
 
 def action_edit_host(request):
-    if not request:
-        request = { "attributes": {
-                     "tag_agent": "snmp-only",
-                     "site": "slave"
-                   },
-                   "hostname": "dingdong3"
-                }
-
     hostname   = request.get("hostname")
     attributes = request.get("attributes")
 
@@ -75,8 +66,16 @@ def action_edit_host(request):
 
 api_actions["edit_host"] = {
     "handler"     : action_edit_host,
-    "title"       : _("Edit a host within WATO"),
-    "description" : _("Edit a host within WATO"),
+    "title"       : _("Edit a host in WATO"),
+    "description" : _("Allows you to modify the host attributes in WATO, but can not change a hosts folder.<br>"\
+                      "If you want to unset a host_tag specify it with <tt>tag_agent=False</tt>."),
+    "example_request" : ([],
+                         { "attributes": {
+                                    "tag_agent": "snmp-only",
+                                    "site": "slave"
+                                },
+                           "hostname": "testhost"
+                         }),
     "locking"     : True,
 }
 
@@ -84,40 +83,34 @@ api_actions["edit_host"] = {
 
 def action_get_host(request):
     if html.var("effective_attributes"):
-        effective_attributes = bool(html.var("effective_attributes"))
+        effective_attributes = bool(int(html.var("effective_attributes")))
     else:
         effective_attributes = True
-
-    if not request:
-        request = {
-                    "hostname": "dingdong3"
-                }
 
     hostname = request.get("hostname")
     return g_api.get_host(hostname, effective_attributes)
 
 api_actions["get_host"] = {
-    "handler"     : action_get_host,
-    "title"       : _("Get host data from WATO"),
-    "description" : _("Get host data from WATO"),
-    "locking"     : True,
+    "handler"         : action_get_host,
+    "title"           : _("Get host data from WATO"),
+    "description"     : _("Returns the host_attributes of the given hostname"),
+    "example_request" : ( [("effective_attributes=0", _("When set to 1 also get attributes from parent folders"))],
+                          { "hostname": "testhost" } ),
+    "locking"         : True,
 }
 
 ###############
 
 def action_delete_host(request):
-    if not request:
-        request = {
-                    "hostname": "dingdong3"
-                    }
-
     hostname = request.get("hostname")
     return g_api.delete_host(hostname)
 
 api_actions["delete_host"] = {
     "handler"     : action_delete_host,
     "title"       : _("Delete host in WATO"),
-    "description" : _("Delete host in WATO"),
+    "description" : _("Deletes the given hostname in WATO"),
+    "example_request" : ( [],
+                          { "hostname": "testhost" } ),
     "locking"     : True,
 }
 
@@ -126,18 +119,15 @@ api_actions["delete_host"] = {
 def action_discover_services(request):
     mode = html.var("var") and html.var("mode") or "new"
 
-    if not request:
-        request = {
-                    "hostname": "dingdong3"
-                    }
-
     hostname = request.get("hostname")
-    return g_api.discover_services(hostname, mode)
+    return g_api.discover_services(hostname, mode = mode)
 
 api_actions["discover_services"] = {
     "handler"     : action_discover_services,
     "title"       : _("Host service discovery"),
-    "description" : _("Host service discovery"),
+    "description" : _("Starts a service discovery for the given hostname."),
+    "example_request" : ( [("mode=new",_("Available modes: new, remove, fixall, refresh"))],
+                          { "hostname": "testhost" } ),
     "locking"     : True,
 }
 
@@ -145,19 +135,21 @@ api_actions["discover_services"] = {
 
 def action_activate_changes(request):
     mode = html.var("mode") and html.var("mode") or "dirty"
-
-    if not request:
-        request = {
-                "sites": ["slave", "localsite"]
-                }
+    if html.var("allow_foreign_changes"):
+        allow_foreign_changes = bool(int(html.var("allow_foreign_changes")))
+    else:
+        allow_foreign_changes = False
 
     sites = request.get("sites")
-    return g_api.activate_changes(sites, mode)
+    return g_api.activate_changes(sites = sites, mode = mode, allow_foreign_changes = allow_foreign_changes)
 
 api_actions["activate_changes"] = {
-    "handler"     : action_activate_changes,
-    "title"       : _("Activate changes"),
-    "description" : _("Activate changes"),
-    "locking"     : True,
+    "handler"         : action_activate_changes,
+    "title"           : _("Activate changes"),
+    "description"     : _("Activates changes. The user still needs the required permissions to do so."),
+    "example_request" : ( [("allow_foreign_changes=0", _("If set to 1 proceed if there are foreign changes")),
+                           ("mode=dirty", _("Available modes: dirty (only dirty sites), all (all sites), specific (use sites set in request)"))],
+                          { "sites": ["slave", "localsite"] }),
+    "locking"         : True,
 }
 
