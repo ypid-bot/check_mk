@@ -16857,10 +16857,6 @@ def delete_host(host):
 
     call_hook_hosts_changed(folder)
 
-# Parses the given attributes and returns those which can be processed by the web api
-# TODO: sollte eher eine exception werfen wenn ungültige werte enthalten sind.
-# TODO: schauen wie der edit host dialog die gueltigen attribute bekommt
-
 #   .--WEB API-------------------------------------------------------------.
 #   |             __        _______ ____       _    ____ ___               |
 #   |             \ \      / / ____| __ )     / \  |  _ \_ _|              |
@@ -16873,7 +16869,13 @@ def delete_host(host):
 #   '----------------------------------------------------------------------'
 
 class API:
-    __all_hosts = None
+    __all_hosts            = None
+    __prepared_folder_info = False
+
+    def __prepare_folder_info(self, force = False):
+        if not self.__prepared_folder_info or force:
+            prepare_folder_info()
+            self.__prepared_folder_info = True
 
     def __get_all_hosts(self, force = False):
         if not self.__all_hosts or force:
@@ -16959,9 +16961,12 @@ class API:
     def lock_wato(self):
         lock_exclusive()
 
-    def add_host(self, hostname, host_foldername, host_attr, create_folders = True, dry_run = False):
-        prepare_folder_info()
+    def add_host(self, hostname, host_foldername, host_attr, create_folders = True):
+        self.__prepare_folder_info()
         all_hosts = self.__get_all_hosts()
+
+        # Tidy up foldername
+        host_foldername = host_foldername.strip("/")
 
         ### VALIDATE ###
         attributes = self.__get_valid_api_host_attributes(host_attr)
@@ -16970,12 +16975,6 @@ class API:
                                             host_foldername = host_foldername,
                                             create_folders  = create_folders,
                                             validate = ["hostname", "hostexists", "tags", "site", "folder", "permissions_new"])
-
-        # Dry run
-        # TODO: Evtl. in eigene Funktion auslagern
-        # Mit Gerdsmeier klaeren
-        if dry_run:
-            return
 
         ### ACTION ###
         # Create folder(s) (only when they do not exist)
@@ -16988,19 +16987,13 @@ class API:
         self.__get_all_hosts(True)
 
     def edit_host(self, hostname, host_attr, dry_run = False):
-        prepare_folder_info()
+        self.__prepare_folder_info()
         all_hosts = self.__get_all_hosts()
 
         attributes = self.__get_valid_api_host_attributes(host_attr)
         self.__validate_host_data(hostname, attributes = attributes,
                                             all_hosts = all_hosts,
                                             validate = ["hostmissing", "tags", "site", "permissions_edit"])
-
-        # Dry run
-        # TODO: Evtl. in eigene Funktion auslagern
-        # Mit Gerdsmeier klaeren
-        if dry_run:
-            return
 
         ### START ACTION ###
         host = all_hosts[hostname]
@@ -17010,7 +17003,7 @@ class API:
         self.__get_all_hosts(True)
 
     def get_host(self, hostname, effective_attr = False):
-        prepare_folder_info()
+        self.__prepare_folder_info()
         all_hosts = self.__get_all_hosts()
 
         self.__validate_host_data(hostname, all_hosts = all_hosts, validate = ["hostmissing"])
@@ -17024,7 +17017,7 @@ class API:
         return cleaned_host
 
     def delete_host(self, hostname):
-        prepare_folder_info()
+        self.__prepare_folder_info()
         all_hosts = self.__get_all_hosts()
 
         self.__validate_host_data(hostname, all_hosts = all_hosts, validate = ["hostmissing", "permissions_edit"])
@@ -17036,7 +17029,7 @@ class API:
         self.__get_all_hosts(True)
 
     def discover_services(self, hostname, mode = "new"):
-        prepare_folder_info()
+        self.__prepare_folder_info()
         all_hosts = self.__get_all_hosts()
 
         config.need_permission("wato.services")
@@ -17055,7 +17048,7 @@ class API:
         return _("Service discovery successful. Added %d, Removed %d, Kept %d, New Count %d") % tuple(counts[hostname])
 
     def activate_changes(self, sites, mode = "dirty", allow_foreign_changes = False):
-        prepare_folder_info()
+        self.__prepare_folder_info()
 
         config.need_permission("wato.activate")
 

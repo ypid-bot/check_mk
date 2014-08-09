@@ -88,7 +88,7 @@ def action_get_host(request):
         effective_attributes = True
 
     hostname = request.get("hostname")
-    return g_api.get_host(hostname, effective_attributes)
+    return g_api.get_host(hostname, effective_attr = effective_attributes)
 
 api_actions["get_host"] = {
     "handler"         : action_get_host,

@@ -66,9 +66,13 @@ def load_plugins():
                 full_description += "<br>Optional GET parameters<br><table>"
                 for entry in example_request[0]:
                     full_description += "<tr><td><tt>%s</tt></td><td>%s</td></tr>" % entry
-                full_description += "</table><br>"
+                full_description += "</table>"
             if example_request[1]:
-                full_description += "Example request body:<br><pre>%s</pre>" % pprint.pformat(example_request[1])
+                try:
+                    import json
+                    full_description += "<br>Example request:<br><pre>%s</pre>" % json.dumps(example_request[1], sort_keys = True, indent = 2)
+                except:
+                    full_description += "<br>Example request:<br><pre>%s</pre>" % pprint.pformat(example_request[1])
 
         config.declare_permission("webapi.%s" % name,
                 settings["title"],
@@ -94,24 +98,28 @@ def page_api():
         # Create API instance
         g_api = API()
 
+        # Prepare request_object
+        # Most of the time the request is given as json
+        # However, the plugin may have an own mechanism to interpret the request
         request_object = {}
-
         if html.var("request"):
-            eval_function = None
-            request = html.var("request")
+            if api_actions[action].get("dont_eval_request"):
+                request_object = request
+            else:
+                eval_function = None
+                request = html.var("request")
 
-            try:
-                import json, asdf
-                eval_function = json.loads
-            except ImportError:
-                eval_function = literal_eval
-                # modify request
-                for old, new in [ (": null",  ": None"),
-                                  (": true",  ": True"),
-                                  (": false", ": False"), ]:
-                    request = request.replace(old, new)
-
-            request_object = eval_function(request)
+                try:
+                    import json
+                    eval_function = json.loads
+                except ImportError:
+                    eval_function = literal_eval
+                    # modify request so it can be read by literal_eval...
+                    for old, new in [ (": null",  ": None"),
+                                      (": true",  ": True"),
+                                      (": false", ": False"), ]:
+                        request = request.replace(old, new)
+                request_object = eval_function(request)
         else:
             request_object = {}
 
@@ -126,18 +134,16 @@ def page_api():
                     html.set_var(key, value)
                 request_object = example_request[1]
 
-
         action_response = api_actions[action]["handler"](request_object)
         response = { "result_code": 0, "response": action_response }
     except Exception, e:
-#        html.debug(e)
-#        import traceback
-#        html.debug(traceback.format_exc().replace("\n","<br>"))
+        #import traceback
+        #html.debug(traceback.format_exc().replace("\n","<br>"))
         response = { "result_code": 1, "result_text": str(e) }
 
     output_format = html.var("output_format", "json")
     if output_format == "json":
-        # TODO: alternative json
+        # TODO: implement json alternative for python < 2.5
         import json
         html.write(json.dumps(response))
     else:
