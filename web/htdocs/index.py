@@ -35,7 +35,7 @@ from mod_python import apache
 import sys, os, pprint
 from lib import *
 import livestatus
-import defaults, config, login, userdb, hooks, visuals, default_permissions, pagetypes
+import defaults, config, login, userdb, hooks, visuals, default_permissions, elements
 
 if os.path.exists(os.path.dirname(os.path.abspath(__file__)) + '/reporting.py'):
     import reporting
@@ -142,8 +142,8 @@ def handler(req, fields = None, profiling = True):
         # time before the first login for generating auth.php.
         load_all_plugins()
 
-        # Install page handlers created by the pagetypes.py modules
-        pagehandlers.update(pagetypes.page_handlers())
+        # Install page handlers created by the elements.py modules
+        pagehandlers.update(elements.page_handlers())
 
         # Detect mobile devices
         if html.has_var("mobile"):

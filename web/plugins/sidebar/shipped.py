@@ -109,9 +109,9 @@ def render_views():
                 else:
                     bulletlink(title, 'dashboard.py?name=%s' % name, onclick = "return wato_views_clicked(this)")
 
-        # TODO: One day pagestypes should handle the complete snapin.
-        if pagetypes.has_page_type("graph_collection"):
-            for t, title, url in pagetypes.page_type("graph_collection").sidebar_links():
+        # TODO: One day elements should handle the complete snapin.
+        if elements.has_element("graph_collection"):
+            for t, title, url in elements.element("graph_collection").sidebar_links():
                 if t == topic:
                     bulletlink(title, url)
 

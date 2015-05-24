@@ -34,28 +34,27 @@ try:
 except ImportError:
     import json
 
-
-#   .--Base----------------------------------------------------------------.
-#   |                        ____                                          |
-#   |                       | __ )  __ _ ___  ___                          |
-#   |                       |  _ \ / _` / __|/ _ \                         |
-#   |                       | |_) | (_| \__ \  __/                         |
-#   |                       |____/ \__,_|___/\___|                         |
+#   .--Element-------------------------------------------------------------.
+#   |                _____ _                           _                   |
+#   |               | ____| | ___ _ __ ___   ___ _ __ | |_                 |
+#   |               |  _| | |/ _ \ '_ ` _ \ / _ \ '_ \| __|                |
+#   |               | |___| |  __/ | | | | |  __/ | | | |_                 |
+#   |               |_____|_|\___|_| |_| |_|\___|_| |_|\__|                |
 #   |                                                                      |
 #   +----------------------------------------------------------------------+
 #   |  Base class of all things that are UserOverridable, ElementContainer |
 #   |  or PageRenderer.                                                    |
 #   '----------------------------------------------------------------------'
 
-class Base:
+class Element:
     def __init__(self, d):
         # The dictionary with the name _ holds all information about
         # the page in question - as a dictionary that can be loaded
         # and saved to files using repr().
         self._ = d
 
-        # Now give all subclasses that chance to add mandatory keys
-        # if they are missing
+        # Now give all subclasses that chance to add mandatory keys in that
+        # dictionary in case they are missing
         for clazz in inspect.getmro(self.__class__)[::-1]:
             if "sanitize" in clazz.__dict__:
                 clazz.sanitize(d)
@@ -886,16 +885,16 @@ class Container:
     # create_info will contain a dictionary that is known to the underlying
     # element. Note: this is being called with the base class object Container,
     # not with any actual subclass like GraphCollection. We need to find that
-    # class by the URL variable page_type.
+    # class by the URL variable element.
     @classmethod
     def ajax_add_element(self):
-        page_type_name = html.var("page_type")
+        element_name = html.var("element")
         page_name      = html.var("page_name")
         element_type   = html.var("element_type")
         create_info    = json.loads(html.var("create_info"))
 
-        page_type = page_types[page_type_name]
-        target_page, need_sidebar_reload = page_type.add_element_via_popup(page_name, element_type, create_info)
+        element = elements[element_name]
+        target_page, need_sidebar_reload = element.add_element_via_popup(page_name, element_type, create_info)
         if target_page:
             # Redirect user to that page
             html.write(target_page.page_url())
@@ -934,17 +933,17 @@ class Container:
 #   '----------------------------------------------------------------------'
 
 # Global dict of all page types
-page_types = {}
+elements = {}
 
-def declare(page_type):
-    page_type.declare_overriding_permissions()
-    page_types[page_type.type_name()] = page_type
+def declare(element):
+    element.declare_overriding_permissions()
+    elements[element.type_name()] = element
 
-def page_type(page_type_name):
-    return page_types[page_type_name]
+def element(element_name):
+    return elements[element_name]
 
-def has_page_type(page_type_name):
-    return page_type_name in page_types
+def has_element(element_name):
+    return element_name in elements
 
 
 # Global module functions for the integration into the rest of the code
@@ -953,8 +952,8 @@ def has_page_type(page_type_name):
 # page handler table
 def page_handlers():
     page_handlers = {}
-    for page_type in page_types.values():
-        page_handlers.update(page_type.page_handlers())
+    for element in elements.values():
+        page_handlers.update(element.page_handlers())
 
     # Ajax handler for adding elements to a container
     # TODO: Shouldn't we move that declaration into the class?
@@ -963,8 +962,8 @@ def page_handlers():
 
 
 def render_addto_popup():
-    for page_type in page_types.values():
+    for element in elements.values():
         # TODO: Wie sorgen wir dafür, dass nur geeignete Elemente zum hinzufügen
         # angeboten werden? Eine View in eine GraphCollection macht keinen Sinn...
-        if issubclass(page_type, Container):
-            page_type.render_addto_popup()
+        if issubclass(element, Container):
+            element.render_addto_popup()

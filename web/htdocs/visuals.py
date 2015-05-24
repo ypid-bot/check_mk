@@ -34,7 +34,7 @@ except ImportError:
 from lib import *
 from valuespec import *
 import config, table
-import pagetypes # That will replace visuals.py one day
+import elements # That will replace visuals.py one day
 
 #   .--Plugins-------------------------------------------------------------.
 #   |                   ____  _             _                              |
@@ -253,9 +253,9 @@ def available(what, all_visuals):
 #   | Show a list of all visuals with actions to delete/clone/edit         |
 #   '----------------------------------------------------------------------'
 
-# TODO: This code has been copied to a new live into htdocs/pagetypes.py
+# TODO: This code has been copied to a new live into htdocs/elements.py
 # We need to convert all existing page types (views, dashboards, reports)
-# to pagetypes.py and then remove this function!
+# to elements.py and then remove this function!
 def page_list(what, title, visuals, custom_columns = [],
     render_custom_buttons = None,
     render_custom_columns = None,
@@ -275,7 +275,7 @@ def page_list(what, title, visuals, custom_columns = [],
     for other_what, info in visual_types.items():
         if what != other_what:
             html.context_button(info["plural_title"].title(), 'edit_%s.py' % other_what, other_what[:-1])
-    # TODO: We hack in those visuals that already have been moved to pagetypes here
+    # TODO: We hack in those visuals that already have been moved to elements here
     html.context_button(_("Graph collections"), "graph_collections.py", "graph_collection")
 
     html.end_context_buttons()
@@ -1372,10 +1372,10 @@ def transform_old_visual(visual):
 #   |  Handling of popup for adding a visual element to a dashboard, etc.  |
 #   '----------------------------------------------------------------------'
 
-# TODO: Remove this code as soon as everything is moved over to pagetypes.py
+# TODO: Remove this code as soon as everything is moved over to elements.py
 def ajax_popup_add():
     html.write("<ul>")
-    pagetypes.render_addto_popup()
+    elements.render_addto_popup()
 
     for visual_type_name, visual_type in visual_types.items():
         if "popup_add_handler" in visual_type:
