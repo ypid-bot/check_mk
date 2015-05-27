@@ -91,6 +91,13 @@ class MKUserError(MKException):
 class MKInternalError(MKException):
     pass
 
+# A decorator that can be used in base classes in order to make sure that
+# mandatory member functions are defined.
+def mandatory(func):
+    def stub(*args, **kwargs):
+        raise MKInternalError(_("Missing implementation of function. arguments: %r, keyword arguments: %r") % (args, kwargsS))
+    return stub
+
 # Create directory owned by common group of Nagios and webserver,
 # and make it writable for the group
 def make_nagios_directory(path):

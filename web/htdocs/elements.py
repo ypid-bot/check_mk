@@ -24,8 +24,8 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-import os
-import config, table, forms, inspect
+import os, pprint, inspect
+import config, table, forms
 from lib import *
 from valuespec import *
 
@@ -34,6 +34,56 @@ try:
 except ImportError:
     import json
 
+#   .--globals-------------------------------------------------------------.
+#   |                         _       _           _                        |
+#   |                    __ _| | ___ | |__   __ _| |___                    |
+#   |                   / _` | |/ _ \| '_ \ / _` | / __|                   |
+#   |                  | (_| | | (_) | |_) | (_| | \__ \                   |
+#   |                   \__, |_|\___/|_.__/ \__,_|_|___/                   |
+#   |                   |___/                                              |
+#   +----------------------------------------------------------------------+
+#   |  Global methods for the integration of Elements into Multisite       |
+#   '----------------------------------------------------------------------'
+
+# Global dict of all page types, e.g. subclasses of Element
+element_types = {}
+
+def declare_element_type(element_type):
+    element_types[element_type.type_name()] = element_type
+    element_type.declare_permissions()
+
+def element_type(element_type_name):
+    return element_types[element_type_name]
+
+def has_element(element_type_name):
+    return element_type_name in element_types
+
+
+# Global module functions for the integration into the rest of the code
+
+# index.py uses the following function in order to complete its
+# page handler table
+def page_handlers():
+    page_handlers = {}
+    for element_type in element_types.values():
+        if (issubclass(element_type, PageRenderer)):
+            page_handlers.update(element_type.page_handlers())
+
+    # Ajax handler for adding elements to a container
+    # TODO: Shouldn't we move that declaration into the class?
+    page_handlers["ajax_pagetype_add_element"] = lambda: Container.ajax_add_element()
+    return page_handlers
+
+
+def render_addto_popup():
+    for element in elements.values():
+        # TODO: Wie sorgen wir dafür, dass nur geeignete Elemente zum hinzufügen
+        # angeboten werden? Eine View in eine GraphCollection macht keinen Sinn...
+        if issubclass(element, Container):
+            element.render_addto_popup()
+
+
+#.
 #   .--Element-------------------------------------------------------------.
 #   |                _____ _                           _                   |
 #   |               | ____| | ___ _ __ ___   ___ _ __ | |_                 |
@@ -54,13 +104,26 @@ class Element:
         self._ = d
 
         # Now give all subclasses that chance to add mandatory keys in that
-        # dictionary in case they are missing
+        # dictionary in case they are missing.
+        # TODO: Check, if this can be done with super() instead of inspect.
         for clazz in inspect.getmro(self.__class__)[::-1]:
             if "sanitize" in clazz.__dict__:
                 clazz.sanitize(d)
 
     def internal_representation(self):
         return self._
+
+    def __repr__(self):
+        return repr(self._)
+
+    def __getitem__(self, key):
+        return self._[key]
+
+    def __contains__(self, key):
+        return key in self._
+
+    def pformat(self):
+        return pprint.pformat(self._)
 
     # You always must override the following method. Not all phrases
     # might be neccessary depending on the type of you page.
@@ -73,6 +136,14 @@ class Element:
     @classmethod
     def phrase(self, phrase):
         return _("MISSING '%s'") % phrase
+
+    # You can override this if you class needs any permissions to
+    # be declared. Note: currently only *one* of the classes in the
+    # inheritance tree can override this method. If we need to change
+    # this we can do this like in __init__ with sanitize...
+    @classmethod
+    def declare_permissions(self):
+        pass
 
     # Implement this function in a subclass in order to add parameters
     # to be editable by the user when editing the details of such page
@@ -150,6 +221,7 @@ class Element:
 
     # Default values for the creation dialog can be overridden by the
     # sub class.
+    # TODO: Shouldn't this go to Overridable?
     @classmethod
     def default_name(self):
         stem = self.type_name()
@@ -170,42 +242,44 @@ class Element:
     def default_topic(self):
         return _("Other")
 
-    # Store for all instances of this page type. The key into
+    # Store for all instances of this element type. The key into
     # this dictionary????
     # TODO: Brauchen wir hier überhaupt ein dict??
     __instances = {}
 
+    # Beware: __instances is *not* created in each subclass, but
+    # exists just once for all element types. For that reason we
+    # need a two-tier-dict.
+    @classmethod
+    def instances_dict(self):
+        return self.__instances.setdefault(self.type_name, {})
+
     @classmethod
     def clear_instances(self):
-        self.__instances = {}
+        self.instances_dict().clear()
 
     @classmethod
     def add_instance(self, key, instance):
-        self.__instances[key] = instance
+        self.instances_dict()[key] = instance
 
     @classmethod
     def remove_instance(self, key):
-        del self.__instances[key]
+        del self.instances_dict()[key]
 
     # Return a list of all instances of this type
     @classmethod
     def instances(self):
-        return self.__instances.values()
+        return self.instances_dict().values()
 
     @classmethod
     def instance(self, key):
-        return self.__instances[key]
-
-    # Return a dict of all instances of this type
-    @classmethod
-    def instances_dict(self):
-        return self.__instances
+        return self.instances_dict()[key]
 
     # Return a list of pairs if instance key and instance, which
     # is sorted by the title of the instance
     @classmethod
     def instances_sorted(self):
-        instances = self.__instances.values()
+        instances = self.instances_dict().values()
         instances.sort(cmp = lambda a,b: cmp(a.title(), b.title()))
         return instances
 
@@ -213,13 +287,15 @@ class Element:
     # several instances might exist that overlay each other. This
     # function returns the final list of pages visible to the user
     @classmethod
+    # TODO: Warum ist das in Element? Wegen Probleme der Mehrfachvererbung...
     def pages(self):
-        for instance in self.__instances.values():
+        for instance in self.instances_dict().values():
             return instance
 
 
     # Stub function for finding a page by name. Overriden by
     # Overridable.
+    # TODO: Warum ist das in Element?
     @classmethod
     def find_page(self, name):
         for instance in self.__instances.values():
@@ -289,6 +365,9 @@ class PageRenderer:
     # one and so on. This is being called (indirectly) in index.py. That way we do
     # not need to hard code page handlers for all types of PageTypes in plugins/pages.
     # It is simply sufficient to register a PageType and all page handlers will exist :-)
+    # TODO: Anscheinend werden alle Views schon geladen,
+    # bevor überhaupt ein Request läuft. Da ist eine load()-Funktion,
+    # die stört. Brauchen wir die hier schon?
     @classmethod
     def page_handlers(self):
         return {
@@ -353,15 +432,12 @@ class Overridable:
         return self.is_public() and \
           config.user_may(self.owner(), "general.force_" + self.type_name())
 
-
     def is_hidden(self):
         return self._.get("hidden", False)
-
 
     # Derived method for conveniance
     def is_builtin(self):
         return not self.owner()
-
 
     def is_mine(self):
         return self.owner() == config.user_id
@@ -429,7 +505,7 @@ class Overridable:
 
 
     @classmethod
-    def declare_overriding_permissions(self):
+    def declare_permissions(self):
         config.declare_permission("general.edit_" + self.type_name(),
              _("Customize %s and use them") % self.phrase("title_plural"),
              _("Allows to create own %s, customize builtin %s and use them.") % (self.phrase("title_plural"), self.phrase("title_plural")),
@@ -832,6 +908,59 @@ class Overridable:
         html.footer()
         return
 
+#.
+#   .--ContextAware--------------------------------------------------------.
+#   |    ____            _            _      _                             |
+#   |   / ___|___  _ __ | |_ _____  _| |_   / \__      ____ _ _ __ ___     |
+#   |  | |   / _ \| '_ \| __/ _ \ \/ / __| / _ \ \ /\ / / _` | '__/ _ \    |
+#   |  | |__| (_) | | | | ||  __/>  <| |_ / ___ \ V  V / (_| | | |  __/    |
+#   |   \____\___/|_| |_|\__\___/_/\_\\__/_/   \_\_/\_/ \__,_|_|  \___|    |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |  Any subclass of this is aware of contexts. That means that for      |
+#   |  rendering it or otherwise bringing it into action we always need    |
+#   |  a context (i.e. bunch of Selectors). ContextAware elements have a   |
+#   |  list of "single infos". Example: a view that shows exactly one host |
+#   |  has the single info "host".                                         |
+#   |  ContextAwares also can have an intrinsic context. In that case the  |
+#   |  key "context" must be present in the elements dict.                 |
+#   '----------------------------------------------------------------------'
+
+
+class ContextAware(Element):
+    # Return a list of infos that this element is about. For views this comes
+    # from the datasource
+    @mandatory
+    def infos(self):
+        pass
+
+    # Return the list of single infos of this element (i.e. to what information
+    # it is specific. In most cases this is [], [ "host" ], or [ "host", "service"].
+    # single_infos() is of course a subset of infos()
+    @mandatory
+    def single_infos(self):
+        pass
+
+    # Return the intrinsic context of a ContextAware. This is taken from
+    # the dict variable "context" if that is present. An empty context
+    # is being returned if that is missing.
+    def context(self):
+        return Context(self.infos(), self.single_infos(), self._.get("context", {}))
+
+    # Construct a context from current URL variables. This takes infos and
+    # single infos into account.
+    # TODO: Should this be moved to ContextProvider?
+    def get_context_from_url(self):
+        context_dict = {}
+        for selector in Selector.instances():
+            if selector.info() in self.infos() and \
+               selector.info() not in self.single_infos() and \
+               selector.is_active():
+               context_dict[selector.name()] = selector.get_selector_context()
+        # TODO: Hier fehlen die single infos. Diese laufen nicht über
+        # selektoren, sondern über Hilfsfunktionen in info.
+        return Context(self.infos(), self.single_infos(), context_dict)
+
 
 
 
@@ -921,49 +1050,219 @@ class Container:
 
 
 #.
-#   .--globals-------------------------------------------------------------.
-#   |                         _       _           _                        |
-#   |                    __ _| | ___ | |__   __ _| |___                    |
-#   |                   / _` | |/ _ \| '_ \ / _` | / __|                   |
-#   |                  | (_| | | (_) | |_) | (_| | \__ \                   |
-#   |                   \__, |_|\___/|_.__/ \__,_|_|___/                   |
-#   |                   |___/                                              |
+#   .--Infos---------------------------------------------------------------.
+#   |                       ___        __                                  |
+#   |                      |_ _|_ __  / _| ___  ___                        |
+#   |                       | || '_ \| |_ / _ \/ __|                       |
+#   |                       | || | | |  _| (_) \__ \                       |
+#   |                      |___|_| |_|_|  \___/|___/                       |
+#   |                                                                      |
 #   +----------------------------------------------------------------------+
-#   |  Global methods for the integration of PageTypes into Multisite      |
+#   |  An info is something like a database table. Examples are "host" or  |
+#   |  "service". The Livestatus table "service" provides the infos "host" |
+#   |  and "service", though! A Livestatus "table" is like a database view |
+#   |  that joins possible several tables.                                 |
 #   '----------------------------------------------------------------------'
 
-# Global dict of all page types
-elements = {}
+class Info(Element):
+    # Mandatory arguments are:
+    # name         : unique name, like "host"
+    # title        : l18n'ed title for the user
+    # title_plural : the same but in plural
+    # selector     : the name of a selector for identifying one object of this ifno
+    def __init__(self, **kwargs):
+        Element.__init__(self, kwargs)
 
-def declare(element):
-    element.declare_overriding_permissions()
-    elements[element.type_name()] = element
+    @classmethod
+    def type_name(self):
+        return "info"
 
-def element(element_name):
-    return elements[element_name]
-
-def has_element(element_name):
-    return element_name in elements
-
-
-# Global module functions for the integration into the rest of the code
-
-# index.py uses the following function in order to complete its
-# page handler table
-def page_handlers():
-    page_handlers = {}
-    for element in elements.values():
-        page_handlers.update(element.page_handlers())
-
-    # Ajax handler for adding elements to a container
-    # TODO: Shouldn't we move that declaration into the class?
-    page_handlers["ajax_pagetype_add_element"] = lambda: Container.ajax_add_element()
-    return page_handlers
+    @classmethod
+    def phrase(self, what):
+        return {
+            "title"          : _("Info"),
+            "title_plural"   : _("Infos"), # TODO: Present the user a better name for this
+        }.get(what, elements.Element.phrase(what))
 
 
-def render_addto_popup():
-    for element in elements.values():
-        # TODO: Wie sorgen wir dafür, dass nur geeignete Elemente zum hinzufügen
-        # angeboten werden? Eine View in eine GraphCollection macht keinen Sinn...
-        if issubclass(element, Container):
-            element.render_addto_popup()
+declare_element_type(Info)
+
+def register_info(info):
+    Info.add_instance(info.name(), info)
+
+#.
+#   .--Selectors-----------------------------------------------------------.
+#   |              ____       _           _                                |
+#   |             / ___|  ___| | ___  ___| |_ ___  _ __ ___                |
+#   |             \___ \ / _ \ |/ _ \/ __| __/ _ \| '__/ __|               |
+#   |              ___) |  __/ |  __/ (__| || (_) | |  \__ \               |
+#   |             |____/ \___|_|\___|\___|\__\___/|_|  |___/               |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |  In the old implemention its name was Filter.                        |
+#   '----------------------------------------------------------------------'
+
+# Begriffe:
+#
+# Kontext -> Eine Sammlung von Filtervariablen, bereits bestimmten Filtern
+# zugeordnet. Die Variablen können in eine URL gesetzt werden.
+#
+# Filter -> ähnlich wie ein Valuespec, aber ohne Varprefix und mit Zusatzfunktionen
+#
+# male_dich(kontext) -> None   Malt Eingabefelder anhand von Kontext
+# gib_kontext() -> kontext     Hole HTML-Variablen und füllt Kontext
+# livestatus_headers(kontext)  Erzeugt Header für Anfrage
+# filter_table(rows, kontext)  Filtert eine bereits geholte Table nachträglich
+#
+# Info -> Entspricht einer Datenbanktabelle
+#
+# Aktuell: Filter holen Dinge aus den HTML-Vars.
+# Neu: Filter bekommen beim Aufruf immer einen Kontext. Das holen der HTML-Vars
+# machen sie isoliert in einer eigenen Funktion.
+
+# context -> Ein globaler Context
+# selector_context -> Daraus nur die Variablen für einen bestimmten Selektor
+
+# Ein Selektor muss sagen können, welche Spalten er benötigt, um die
+# nachgelagerte Filterung mit filter_table() machen zu können. Diese werden
+# nur dann geholt, wenn der Filter aktiv ist. Beispiel ist das host_inventory.
+
+class Selector(Element):
+    # This is called by the subclass-__init__ functions. The arguments are
+    # name:        the unique name of the selector
+    # title:       a title
+    # description: A description (help text). Should this be optional?
+    # variables:   A list of URL variable names owned by this selector
+    # info:        The info (e.g. "service") this selector deals with
+    def __init__(self, **kwargs):
+        Element.__init__(self, kwargs)
+
+    @classmethod
+    def type_name(self):
+        return "selector"
+
+    @classmethod
+    def phrase(self, what):
+        return {
+            "title"          : _("Selector"),
+            "title_plural"   : _("Selectors"),
+        }.get(what, elements.Element.phrase(what))
+
+    def info(self):
+        return self._["info"]
+
+    # Return the URL variables that this selector owns
+    def variables(self):
+        return self._["variables"]
+
+    # Pick out the URL variables that make up this selector. The selector
+    # needs to decide wether it is active in the first place. If not it
+    # must return None and not a list of empy URL variables.
+    def get_selector_context(self):
+        if self.is_active():
+            return dict([(varname, html.var(varname, "")) for varname in self.variables()])
+
+    # STUFF TO BE OVERRIDDEN STARTS HERE
+
+    # Checks, if the URL variables are set in a way that the
+    # selector actual selects something.
+    @mandatory
+    def is_active(self):
+        pass
+
+
+    # Some selectors can be unavailable due to the configuration (e.g.
+    # the WATO Folder selector is only available if WATO is enabled.
+    def available(self):
+        return True
+
+    # More complex selector need more height in the HTML layout
+    def double_height(self):
+        return False
+
+    # Render HTML Code for user. selector_context is a dict of
+    # URL variables
+    @mandatory
+    def display(self, selector_context):
+        pass
+
+    # Formerly called filter(). Create Livestatus headers for
+    # query, e.g. the selector does its actual job. The selector
+    # may assume that it is active.
+    def livestatus_headers(self, selector_context):
+        return ""
+
+    # Post-Processing: this is for selectors that cannot work via
+    # Livestatus. Formerly called filter_table(). The selector
+    # may assume that it is active.
+    def select_rows(self, rows, selector_context):
+        return rows
+
+declare_element_type(Selector)
+
+def register_selector(selector):
+    Selector.add_instance(selector.name(), selector)
+
+#.
+#   .--Contexts------------------------------------------------------------.
+#   |                 ____            _            _                       |
+#   |                / ___|___  _ __ | |_ _____  _| |_ ___                 |
+#   |               | |   / _ \| '_ \| __/ _ \ \/ / __/ __|                |
+#   |               | |__| (_) | | | | ||  __/>  <| |_\__ \                |
+#   |                \____\___/|_| |_|\__\___/_/\_\\__|___/                |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |  A Context is a bunch of Selectors plus specification for single     |
+#   |  infos. For example a service context might be the specification of  |
+#   |  a host name plus selectors that select only problem services of     |
+#   |  this host.
+#   '----------------------------------------------------------------------'
+
+class Context(Element):
+    def __init__(self, infos, single_infos, context_dict):
+        self._single_infos = single_infos
+        self._infos = infos
+        self._ = self.sanitize_context_dict(context_dict)
+
+    # Bring visuals-style contexts with non-dict values for
+    # single infos into new elements-style context, where single
+    # infos are no longer special.
+    def sanitize_context_dict(self, context_dict):
+        sanitized = {}
+        for key, value in context_dict.items():
+            if type(value) == dict:
+                sanitized[key] = value
+
+        # TODO: einen generischeren Weg finden, als das hier alles hart zu
+        for info_name in self.single_infos():
+            if info_name in [ "host", "service" ]:
+                if info_name in context_dict:
+                    sanitized[info_name] = { info_name : context_dict[info_name] }
+
+        return sanitized
+
+
+    def infos(self):
+        return self._infos
+
+    def single_infos(self):
+        return self._single_infos
+
+    def livestatus_filters(self):
+        # TODO: single infos
+        headers = ""
+        for selector_name, selector_context in self._.items():
+            # Pick out the multi contexts. Single contexts are unicode type
+            if type(selector_context) == dict:
+                selector = Selector.instance(selector_name)
+                headers += selector.livestatus_headers(selector_context)
+        return headers
+
+    # Non-Livestatus filtering (e.g. for BI tables)
+    def select_rows(self, rows, context):
+        for selector_name, selector_context in self._.items():
+            if type(selector_context) == dict:
+                selector = Selector.instance(selector_name)
+                rows = selector.select_rows(rows, selector_context)
+        return rows
+

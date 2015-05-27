@@ -72,6 +72,13 @@
 # ignore_limit: Ignore the soft/hard query limits in view.py/query_data(). This
 #               fixes stats queries on e.g. the log table.
 
+# TODO:
+#  1. Rename "keys" into "fetch_always" or something like that
+#  2. Remove "site" from "idkeys". In the infos there is now a field
+#     "multisite", that is True, if the info can span over several
+#     sites.
+# 
+
 multisite_datasources["hosts"] = {
     "title"   : _("All hosts"),
     "table"   : "hosts",
@@ -92,6 +99,26 @@ multisite_datasources["hosts"] = {
         "servicegroup",
     ],
 }
+
+register_datasource(
+    LivestatusDatasource(
+        name        = "hosts",
+        title       = _("Hosts"),
+        description = _("Table of all monitored hosts"),
+        table       = "hosts",
+        infos       = [ "host" ],
+    )
+)
+
+register_datasource(
+    LivestatusDatasource(
+        name        = "services",
+        title       = _("Services"),
+        description = _("Table of all monitored services"),
+        table       = "services",
+        infos       = [ "host", "service" ],
+    )
+)
 
 multisite_datasources["hostsbygroup"] = {
     "title"   : _("Hosts grouped by host groups"),
@@ -130,6 +157,7 @@ multisite_datasources["servicesbygroup"] = {
     "title"   : _("Services grouped by service groups"),
     "table"   : "servicesbygroup",
     "infos"   : [ "service", "host", "servicegroup" ],
+    # TODO: Why are "downtimes" in the keys!?! Looks like a hack to me....
     "keys"    : [ "host_name", "service_description", "service_downtimes" ],
     "idkeys"  : [ "site", "servicegroup_name", "host_name", "service_description" ],
 }

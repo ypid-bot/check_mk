@@ -34,7 +34,7 @@ except ImportError:
 from lib import *
 from valuespec import *
 import config, table
-import elements # That will replace visuals.py one day
+from elements import *# That will replace visuals.py one day
 
 #   .--Plugins-------------------------------------------------------------.
 #   |                   ____  _             _                              |

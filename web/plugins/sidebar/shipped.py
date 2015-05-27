@@ -111,7 +111,7 @@ def render_views():
 
         # TODO: One day elements should handle the complete snapin.
         if elements.has_element("graph_collection"):
-            for t, title, url in elements.element("graph_collection").sidebar_links():
+            for t, title, url in elements.element_type("graph_collection").sidebar_links():
                 if t == topic:
                     bulletlink(title, url)
 

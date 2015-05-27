@@ -45,7 +45,7 @@
 #    input to str or unicode must happen as early as possible,
 #    directly when reading from file or URL.
 
-import time, os, pwd, urllib, random, re, __builtin__
+import time, os, pwd, urllib, random, re, pprint, __builtin__
 
 from lib import *
 # Python 2.3 does not have 'set' in normal namespace.
@@ -113,7 +113,7 @@ class html:
         self.new_transids = []
         self.ignore_transids = False
         self.current_transid = None
-        self.page_context = {}
+        self.page_context = {} # TODO: remove this hack
 
         # Time measurement
         self.times            = {}
@@ -133,6 +133,7 @@ class html:
     def get_user_agent(self):
         return self.req.headers_in.get('User-Agent', '')
 
+    # TODO: Remove this. This is a hack. Does not belong to HTML
     def set_page_context(self, c):
         self.page_context = c
 
@@ -987,6 +988,7 @@ class html:
                  '<img class=statusicon src="images/status_download_csv.png" title="%s"></a>\n' % \
                  (self.makeuri([("output_format", "csv_export")]), _("Export as CSV")))
 
+        # TODO: Move this into a context button and out of the HTML library
         if self.myfile == "view":
             mode_name = self.var('mode') == "availability" and "availability" or "view"
 
@@ -1343,9 +1345,12 @@ class html:
 
 
     def debug(self, *x):
-        import pprint
         for element in x:
-            self.lowlevel_write("<pre>%s</pre>\n" % self.attrencode(pprint.pformat(element)))
+            try:
+                text = element.pformat() # give objects a chance to override
+            except:
+                text = pprint.pformat(element)
+            self.lowlevel_write("<pre>%s</pre>\n" % self.attrencode(text))
 
 
     def has_cookie(self, varname):

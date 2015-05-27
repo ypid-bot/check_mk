@@ -34,6 +34,23 @@ infos['host'] = {
     ],
 }
 
+register_info(
+    Info(
+        name         = "host",
+        title        = _("Host"),
+        title_plural = _("Hosts"),
+        selector     = "host",
+))
+
+register_info(
+    Info(
+        name         = "service",
+        title        = _("Service"),
+        title_plural = _("Services"),
+        selector     = "service",
+))
+
+
 infos['service'] = {
     'title'       : _('Service'),
     'title_plural': _('Services'),

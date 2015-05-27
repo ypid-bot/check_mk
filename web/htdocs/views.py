@@ -26,6 +26,7 @@
 
 import config, defaults, livestatus, time, os, re, pprint, time
 import weblib, traceback, forms, valuespec, inventory, visuals
+import elements
 from lib import *
 
 # Python 2.3 does not have 'set' in normal namespace.
@@ -82,6 +83,21 @@ def load_plugins():
     # Add painter names to painter objects (e.g. for JSON web service)
     for n, p in multisite_painters.items():
         p["name"] = n
+
+    # EXPERIMENTAL NEW STUFF - "ELEMENTS"
+    # TODO: Warum kann das nicht im globalen Kontext passieren?
+    elements.declare_element_type(Datasource)
+    elements.declare_element_type(Painter)
+    elements.declare_element_type(View)
+
+    # TODO: Das hier muss natürlich so geändert werden, dass das declare_painter direkt
+    # bei den Paintern aufgerufen wird. Aber klappt das dann noch mit der l10n? Wohl
+    # ja, weil das ja dann in den Plugins läuft.
+    for name, entry in multisite_painters.items():
+        entry["name"] = name
+        declare_painter(Painter(entry))
+
+
 
 # Load all views - users or builtins
 def load_views():
@@ -935,6 +951,9 @@ def show_view(view, show_heading = False, show_buttons = True,
     show_checkboxes = force_checkboxes or html.var('show_checkboxes', '0') == '1'
 
     # Get the datasource (i.e. the logical table)
+    # TODO: Hier die datasource von den elements holen. Später, wenn die
+    # view selbst ein element ist, kann dann der Code in die View verlagert
+    # werden.
     datasource = multisite_datasources[view["datasource"]]
     tablename = datasource["table"]
 
@@ -961,6 +980,8 @@ def show_view(view, show_heading = False, show_buttons = True,
     #
     # a) single context vars of the view are enforced
     # b) multi context vars can be overwritten by existing HTML vars
+    # TODO: Das hier wird überflüssig. Die Filter bekommen den Kontext
+    # als Dict geliefert und lesen nicht selbst aus den URL-Variablen
     visuals.add_context_to_uri_vars(view, datasource["infos"], only_count)
 
     # Check that all needed information for configured single contexts are available
@@ -968,6 +989,9 @@ def show_view(view, show_heading = False, show_buttons = True,
 
     # Af any painter, sorter or filter needs the information about the host's
     # inventory, then we load it and attach it as column "host_inventory"
+    # TODO: Die künstliche Spalte host_inventory muss von der Datasource bereitgestellt
+    # werden. Eine on-demand-Spalte quasi. Der Filter (Selektor) muss dann nur
+    # sagen, dass er die Spalte braucht.
     need_inventory_data = False
 
     # Prepare Filter headers for Livestatus
@@ -975,6 +999,8 @@ def show_view(view, show_heading = False, show_buttons = True,
     # active. That way the inventory data will always be loaded. When
     # we convert this to the visuals principle the we need to optimize
     # this.
+    # TODO: Das hier muss nun das Datasource-Objekt selbst machen. Dazu gibt
+    # es dann wohl eine Basisklasse LivestatusDatasource, welche das übernimmt.
     filterheaders = ""
     all_active_filters = [ f for f in use_filters if f.available() ]
     for filt in all_active_filters:
@@ -1000,6 +1026,9 @@ def show_view(view, show_heading = False, show_buttons = True,
 
     # Fork to availability view. We just need the filter headers, since we do not query the normal
     # hosts and service table, but "statehist". This is *not* true for BI availability, though (see later)
+    # TODO: Das muss ganz anders gelöst werden. Die availability-Ansicht muss
+    # einfach ein eigener PageType werden, der über einen Kontext angesprochen
+    # wird und so die gleiche Auswahl zeigt. Und dann ein sauberer Kontextbutton.
     if html.var("mode") == "availability" and (
           "aggr" not in datasource["infos"] or html.var("timeline_aggr")):
         return render_availability_page(view, datasource, filterheaders, display_options, only_sites, limit)
@@ -1416,7 +1445,12 @@ def get_limit():
         return config.soft_query_limit
 
 def view_title(view):
-    return visuals.visual_title('view', view)
+    try:
+        return visuals.visual_title('view', view)
+    except:
+        # TODO: Das hier ist nur wegen der neuen Views, wieder raus, sobald render_view
+        # auch new geschrieben wurde.
+        return view["title"]
 
 def view_optiondial(view, option, choices, help):
     vo = view_options(view["name"])
@@ -1613,6 +1647,7 @@ def query_data(datasource, columns, add_columns, add_headers, only_sites = [], l
     # is selected. Make sure those columns are fetched. This
     # must not be done for the table 'log' as it cannot correctly
     # distinguish between service_state and host_state
+    # TODO: Move this somewhere else
     if "log" not in datasource["infos"]:
         state_columns = []
         if "service" in datasource["infos"]:
@@ -1629,6 +1664,9 @@ def query_data(datasource, columns, add_columns, add_headers, only_sites = [], l
     return do_query_data(query, columns, add_columns, merge_column,
                          add_headers, only_sites, limit)
 
+# TODO: Remove this function as soon as the new implementation
+# is finished. The new version of this function is a member
+# of LivestatusDatasource
 def do_query_data(query, columns, add_columns, merge_column,
                   add_headers, only_sites, limit):
     query += "Columns: %s\n" % " ".join(columns)
@@ -2561,3 +2599,289 @@ def ajax_popup_action_menu():
             html.write(icon[2])
         html.write('</li>\n')
     html.write('</ul>\n')
+
+
+#.
+#   .--Datasources---------------------------------------------------------.
+#   |       ____        _                                                  |
+#   |      |  _ \  __ _| |_ __ _ ___  ___  _   _ _ __ ___ ___  ___         |
+#   |      | | | |/ _` | __/ _` / __|/ _ \| | | | '__/ __/ _ \/ __|        |
+#   |      | |_| | (_| | || (_| \__ \ (_) | |_| | | | (_|  __/\__ \        |
+#   |      |____/ \__,_|\__\__,_|___/\___/ \__,_|_|  \___\___||___/        |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |  A datasource is like a database view. It provides a table of data.  |
+#   |  The table can - but need not - have its origin in a Livestatus      |
+#   |  query.
+#   '----------------------------------------------------------------------'
+
+class Datasource(elements.Element):
+    def __init__(self, d):
+        elements.Element.__init__(self, d)
+
+    @classmethod
+    def type_name(self):
+        return "datasource"
+
+    @classmethod
+    def phrase(self, what):
+        return {
+            "title"          : _("Datasource"),
+            "title_plural"   : _("Datasources"),
+        }.get(what, elements.Element.phrase(what))
+
+    def infos(self):
+        return self._["infos"]
+
+    # Central method of all: fetch the actual data rows. Columns is a list
+    # of column names. Returns a list of rows. Each row is a dictionary.
+    # TODO: Hierbei muss das Limit berücksichtigt werden.
+    def query(self, columns, context, limit=None):
+        rows = self.do_query(columns, context, limit)
+        rows = context.select_rows(rows, context) # Non-livestatus filtering
+        return rows
+
+    # Override this in order to perform the actual data retreiving
+    @mandatory
+    def do_query(self, columns, context, limit=None):
+        pass
+
+
+    # TODO: Eine Datasource muss wissen, welche Spalten überhaupt da sind? War bisher
+    # aber auch nicht der Fall.
+
+class LivestatusDatasource(Datasource):
+    def __init__(self, **kwargs):
+        Datasource.__init__(self, kwargs)
+
+    def do_query(self, columns, context, limit=None):
+        # TODO:
+        # - Implizite Spalten definieren, die aus der Info kommen und immer da sind
+        # - Selektoren
+        # - Additional headers
+        # - Single Infos
+        # - Site hint
+        # - Das was keys und idkeys in den datasources machen. Da haben wir
+        #   aktuell Duplikaten!
+        # - Implizite site-Spalte entfernen, falls vorhanden. Noch besser: verhindern,
+        #   dass sie rein kommt
+        # - Move global method do_query_data() here.
+
+        if "site" in columns:
+            columns.remove("site")
+            need_site = True
+        else:
+            need_site = False
+
+        if "site" in context:
+            only_sites = [ context["site"] ]
+            html.live.set_only_sites(only_sites)
+
+        query = "GET %s\n" % self._["table"]
+        query += "Columns: %s\n" % " ".join(columns)
+        query += context.livestatus_filters()
+
+        # Tell Livestatus client module to create an artificial column with the site
+        if need_site:
+            html.live.set_prepend_site(True)
+
+        if limit != None:
+            html.live.set_limit(limit + 1) # + 1: We need to know, if limit is exceeded
+
+        if config.debug_livestatus_queries \
+                and html.output_format == "html" and 'W' in html.display_options:
+            html.write('<div class="livestatus message">'
+                       '<tt>%s</tt></div>\n' % (query.replace('\n', '<br>\n')))
+
+        data = html.live.query(query)
+        html.live.set_only_sites(None)
+        html.live.set_prepend_site(False)
+        html.live.set_limit() # removes limit
+
+        # TODO: Join columns
+        # if merge_column:
+        #     data = merge_data(data, columns)
+
+        # Convert lists-rows into dictionaries.
+        if need_site:
+            columns = [ "site" ] + columns
+        return [ dict(zip(columns, row)) for row in data ]
+
+
+def register_datasource(datasource):
+    Datasource.add_instance(datasource.name(), datasource)
+
+def get_datasource(datasource_name):
+    return Datasource.instance(datasource_name)
+
+
+
+#.
+#   .--Painters------------------------------------------------------------.
+#   |                 ____       _       _                                 |
+#   |                |  _ \ __ _(_)_ __ | |_ ___ _ __ ___                  |
+#   |                | |_) / _` | | '_ \| __/ _ \ '__/ __|                 |
+#   |                |  __/ (_| | | | | | ||  __/ |  \__ \                 |
+#   |                |_|   \__,_|_|_| |_|\__\___|_|  |___/                 |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   | A painter converts entries of a row in printable HTML code for a     |
+#   | table view.                                                          |
+#   '----------------------------------------------------------------------'
+
+class Painter(elements.Element):
+    def __init__(self, d):
+        elements.Element.__init__(self, d)
+
+    @classmethod
+    def type_name(self):
+        return "painter"
+
+    @classmethod
+    def phrase(self, what):
+        return {
+            "title"          : _("Column"),
+            "title_plural"   : _("Columns"),
+        }.get(what, elements.Element.phrase(what))
+
+    def required_columns(self):
+        return self._["columns"]
+
+
+# Convert legacy style painters into the new class form
+
+def declare_painter(painter):
+    Painter.add_instance(painter.name(), painter)
+
+#.
+#   .--Views---------------------------------------------------------------.
+#   |                    __     ___                                        |
+#   |                    \ \   / (_) _____      _____                      |
+#   |                     \ \ / /| |/ _ \ \ /\ / / __|                     |
+#   |                      \ V / | |  __/\ V  V /\__ \                     |
+#   |                       \_/  |_|\___| \_/\_/ |___/                     |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |  New code for displaying views                                       |
+#   '----------------------------------------------------------------------'
+
+class View(elements.PageRenderer, elements.Overridable, elements.ContextAware, elements.Element):
+    def __init__(self, d):
+        elements.Element.__init__(self, d)
+        try:
+            self._datasource = Datasource.instance(self._["datasource"])
+        except:
+            pass
+            # TODO: Das hier wieder aktivieren und sicherstellen, dass alle DS da sind.
+            # if config.debug:
+            #     raise MKGeneralException("View %s: datasource %s is missing" % (d["name"], d["datasource"]))
+
+    @classmethod
+    def type_name(self):
+        return "view"
+
+    @classmethod
+    def phrase(self, what):
+        return {
+            "title"          : _("View"),
+            "title_plural"   : _("Views"),
+            "clone"          : _("Clone View"),
+            "create"         : _("Create View"),
+            "edit"           : _("Edit View"),
+        }.get(what, elements.Element.phrase(what))
+
+    @classmethod
+    def sanitize(self, d):
+        d.setdefault("single_infos", [])
+        # TODO: Hier das umstellen von alten Viewdefinitionen auf neue
+
+    # TODO: Das hier muss dann wieder raus, wenn wir auf die
+    # neuen Views umstellen und die alten rauswerfen! Die Funktion
+    # gibt es in der Klasse overridable, aber es installiert
+    # nämlich einen neuen Handler für view.py, und wir wollen
+    # vorerst view_new.py verwenden! Dann in pages/shipped
+    # die manuellen Handler entfernen!
+    @classmethod
+    def page_handlers(self):
+        return {}
+
+    @classmethod
+    def builtin_pages(self):
+        return multisite_builtin_views
+
+    def datasource(self):
+        return self._datasource
+
+    # Implement API of ContextAware
+    def single_infos(self):
+        return self._["single_infos"]
+
+    # Implement API of ContextAware
+    def infos(self):
+        return self._datasource.infos()
+
+    def painters(self):
+        for painter_spec in self._["painters"]:
+            # TODO: painter_spec[1] geht hier unter: Der Link.
+            # Evtl. gibt es auch noch einen Tooltip, etc.
+            yield Painter.instance(painter_spec[0])
+
+    # Return a list of the names of all columns that need to
+    # be fetched from the datasource. There are several reasons
+    # why we need columns:
+    # - Painters need columns for being painted
+    # - The Datasource specifies mandatory columns
+    # - Filters might need columns for their (non-Livestatus) work
+    def required_columns(self):
+        columns = set([])
+        for painter in self.painters():
+            columns.update(painter.required_columns())
+        # TODO:
+        # - Columns of datasource (or should this be implicit?)
+        # - Columns of filters (we need the context therefore)
+        return columns
+
+    # Renders a view in HTML.
+    # TODO: Allow specifying a context that comes not from the URL?
+    def render_html(self, context):
+        context = self.context()
+
+        # context = self.get_context_from_url()
+        # TODO: Merge context that is hardcoded in view itself
+        columns = sorted(list(self.required_columns()))
+        # TODO: Limit
+        rows = self.datasource().query(columns, context)
+        html.debug(("ROWS", rows))
+        return
+
+        # TODO: Das do_table_join() muss in die Datasoucre irgendwie rein
+        # TODO: auch das need_inventory_data muss vorher schon gelaufen sein.
+        #       Das muss der Selektor abonnieren. Und die datasources, die
+        #       eine Host-Spalte haben, müssen diese dann magisch hinzufügen.
+        # TODO: output_format JSON/CSV/Whatever?
+        layout_name = self._["layout"]
+        layout = multisite_layouts[layout_name]
+        html.debug(layout)
+        # THIS IS JUST A TEST
+        ds = multisite_datasources[self._["datasource"]]
+        html.debug(self._["painters"])
+        p = [ (multisite_painters[e[0]],) + e[1:] for e in self._["painters"] if e[0] in multisite_painters ]
+        display_options = prepare_display_options()
+        render_view(self._, rows, ds, [], p, 
+                    display_options, {}, True, True, True, layout, 3, True, True, 50)
+
+    # Was brauche ich zum Malen einer View: Statisch in der View sind painters,
+    # group_painters, layout. Dynamisch sind context und rows. Den context
+    # brauche ich z.B. für den Titel. Allerdings könnte man auch das mit
+    # dem Titel gleich so umbauen, dass nur die single_infos angezeigt werden
+    # und ein Icon davor. jedes Info bekommt ein Icon. Dann muss man für
+    # view_titel nicht auf Selektoren zurückgreifen.
+
+# TODO: Move this to member method page_show of View later.
+def page_view_new():
+    # View.load() # Loads builtin and also user's views
+    view_name = html.var("view_name")
+    view = View.find_page(view_name)
+    context = view.get_context_from_url()
+    view.render_html(context)
+
