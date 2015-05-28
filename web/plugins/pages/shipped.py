@@ -104,8 +104,5 @@ pagehandlers.update({
    "tree_openclose"              : weblib.ajax_tree_openclose,
    "view"                        : views.page_view,
    "webapi"                      : webapi.page_api,
-
-   # Experimental:
-   "view_new"                    : views.page_view_new,
 })
 

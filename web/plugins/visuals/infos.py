@@ -34,12 +34,20 @@ infos['host'] = {
     ],
 }
 
+# single_spec is being dropped in the new implementation
+# Instead there is the rule, that for each info there must
+# be one selector that has the name of that info. Therefore
+# nothing more needs to be specified here.
+# TODO: Was hier noch fehlt, ist der Weg von einer row zu
+# dem gültigen Selektorkontext. Bauen wir das in den Selektor
+# ein oder lieber in das Info? Würde sagen, in das Info.
+
 register_info(
     Info(
-        name         = "host",
-        title        = _("Host"),
-        title_plural = _("Hosts"),
-        selector     = "host",
+        name             = "host",
+        title            = _("Host"),
+        title_plural     = _("Hosts"),
+        context_from_row = lambda row: { "host" : row["host_name"] },
 ))
 
 register_info(
@@ -47,7 +55,7 @@ register_info(
         name         = "service",
         title        = _("Service"),
         title_plural = _("Services"),
-        selector     = "service",
+        context_from_row = lambda row: { "service" : row["service_description"] },
 ))
 
 
@@ -86,6 +94,9 @@ infos['servicegroup'] = {
 infos['log'] = {
     'title'       : _('Log Entry'),
     'title_plural': _('Log Entries'),
+    # TODO: Es könnte doch einen geben: nämlich die Kombi aus Zeitstempel und
+    # Dateizeile. Dafür können wir einen hübschen Filter bauen, den man sowieso
+    # nicht händisch braucht, aber nur so kann man einen single-Kontext herstellen!
     'single_spec' : None,
 }
 

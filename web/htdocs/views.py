@@ -85,11 +85,6 @@ def load_plugins():
         p["name"] = n
 
     # EXPERIMENTAL NEW STUFF - "ELEMENTS"
-    # TODO: Warum kann das nicht im globalen Kontext passieren?
-    elements.declare_element_type(Datasource)
-    elements.declare_element_type(Painter)
-    elements.declare_element_type(View)
-
     # TODO: Das hier muss natürlich so geändert werden, dass das declare_painter direkt
     # bei den Paintern aufgerufen wird. Aber klappt das dann noch mit der l10n? Wohl
     # ja, weil das ja dann in den Plugins läuft.
@@ -120,154 +115,156 @@ def permitted_views():
 # Convert views that are saved in the pre 1.2.6-style
 # FIXME: Can be removed one day. Mark as incompatible change or similar.
 def transform_old_views():
-
     for view in multisite_views.values():
-        ds_name    = view['datasource']
-        datasource = multisite_datasources[ds_name]
+        transform_old_view(view)
 
-        if "context" not in view: # legacy views did not have this explicitly
-            view.setdefault("user_sortable", True)
+def transform_old_view(view):
+    ds_name    = view['datasource']
+    datasource = multisite_datasources[ds_name]
 
-        if 'context_type' in view:
-            # This code transforms views from user_views.mk which have been migrated with
-            # daily snapshots from 2014-08 till beginning 2014-10.
-            visuals.transform_old_visual(view)
+    if "context" not in view: # legacy views did not have this explicitly
+        view.setdefault("user_sortable", True)
 
-        elif 'single_infos' not in view:
-            # This tries to map the datasource and additional settings of the
-            # views to get the correct view context
-            #
-            # This code transforms views from views.mk (legacy format) to the current format
+    if 'context_type' in view:
+        # This code transforms views from user_views.mk which have been migrated with
+        # daily snapshots from 2014-08 till beginning 2014-10.
+        visuals.transform_old_visual(view)
+
+    elif 'single_infos' not in view:
+        # This tries to map the datasource and additional settings of the
+        # views to get the correct view context
+        #
+        # This code transforms views from views.mk (legacy format) to the current format
+        try:
+            hide_filters = view.get('hide_filters')
+
+            if 'service' in hide_filters and 'host' in hide_filters:
+                view['single_infos'] = ['service', 'host']
+            elif 'service' in hide_filters and 'host' not in hide_filters:
+                view['single_infos'] = ['service']
+            elif 'host' in hide_filters:
+                view['single_infos'] = ['host']
+            elif 'hostgroup' in hide_filters:
+                view['single_infos'] = ['hostgroup']
+            elif 'servicegroup' in hide_filters:
+                view['single_infos'] = ['servicegroup']
+            elif 'aggr_service' in hide_filters:
+                view['single_infos'] = ['service']
+            elif 'aggr_name' in hide_filters:
+                view['single_infos'] = ['aggr']
+            elif 'log_contact_name' in hide_filters:
+                view['single_infos'] = ['contact']
+            elif 'event_host' in hide_filters:
+                view['single_infos'] = ['host']
+            elif hide_filters == ['event_id', 'history_line']:
+                view['single_infos'] = ['history']
+            elif 'event_id' in hide_filters:
+                view['single_infos'] = ['event']
+            elif 'aggr_hosts' in hide_filters:
+                view['single_infos'] = ['host']
+            else:
+                # For all other context types assume the view is showing multiple objects
+                # and the datasource can simply be gathered from the datasource
+                view['single_infos'] = []
+        except: # Exceptions can happen for views saved with certain GIT versions
+            if config.debug:
+                raise
+
+    # Convert from show_filters, hide_filters, hard_filters and hard_filtervars
+    # to context construct
+    if 'context' not in view:
+        view['show_filters'] = view['hide_filters'] + view['hard_filters'] + view['show_filters']
+
+        single_keys = visuals.get_single_info_keys(view)
+
+        # First get vars for the classic filters
+        context = {}
+        filtervars = dict(view['hard_filtervars'])
+        all_vars = {}
+        for filter_name in view['show_filters']:
+            if filter_name in single_keys:
+                continue # skip conflictings vars / filters
+
+            context.setdefault(filter_name, {})
             try:
-                hide_filters = view.get('hide_filters')
+                f = visuals.get_filter(filter_name)
+            except:
+                # The exact match filters have been removed. They where used only as
+                # link filters anyway - at least by the builtin views.
+                continue
 
-                if 'service' in hide_filters and 'host' in hide_filters:
-                    view['single_infos'] = ['service', 'host']
-                elif 'service' in hide_filters and 'host' not in hide_filters:
-                    view['single_infos'] = ['service']
-                elif 'host' in hide_filters:
-                    view['single_infos'] = ['host']
-                elif 'hostgroup' in hide_filters:
-                    view['single_infos'] = ['hostgroup']
-                elif 'servicegroup' in hide_filters:
-                    view['single_infos'] = ['servicegroup']
-                elif 'aggr_service' in hide_filters:
-                    view['single_infos'] = ['service']
-                elif 'aggr_name' in hide_filters:
-                    view['single_infos'] = ['aggr']
-                elif 'log_contact_name' in hide_filters:
-                    view['single_infos'] = ['contact']
-                elif 'event_host' in hide_filters:
-                    view['single_infos'] = ['host']
-                elif hide_filters == ['event_id', 'history_line']:
-                    view['single_infos'] = ['history']
-                elif 'event_id' in hide_filters:
-                    view['single_infos'] = ['event']
-                elif 'aggr_hosts' in hide_filters:
-                    view['single_infos'] = ['host']
-                else:
-                    # For all other context types assume the view is showing multiple objects
-                    # and the datasource can simply be gathered from the datasource
-                    view['single_infos'] = []
-            except: # Exceptions can happen for views saved with certain GIT versions
-                if config.debug:
-                    raise
+            for var in f.htmlvars:
+                # Check whether or not the filter is supported by the datasource,
+                # then either skip or use the filter vars
+                if var in filtervars and f.info in datasource['infos']:
+                    value = filtervars[var]
+                    all_vars[var] = value
+                    context[filter_name][var] = value
 
-        # Convert from show_filters, hide_filters, hard_filters and hard_filtervars
-        # to context construct
-        if 'context' not in view:
-            view['show_filters'] = view['hide_filters'] + view['hard_filters'] + view['show_filters']
+            # We changed different filters since the visuals-rewrite. This must be treated here, since
+            # we need to transform views which have been created with the old filter var names.
+            # Changes which have been made so far:
+            changed_filter_vars = {
+                'serviceregex': { # Name of the filter
+                    # old var name: new var name
+                    'service': 'service_regex',
+                },
+                'hostregex': {
+                    'host': 'host_regex',
+                },
+                'hostgroupnameregex': {
+                    'hostgroup_name': 'hostgroup_regex',
+                },
+                'servicegroupnameregex': {
+                    'servicegroup_name': 'servicegroup_regex',
+                },
+                'opthostgroup': {
+                    'opthostgroup': 'opthost_group',
+                    'neg_opthostgroup': 'neg_opthost_group',
+                },
+                'optservicegroup': {
+                    'optservicegroup': 'optservice_group',
+                    'neg_optservicegroup': 'neg_optservice_group',
+                },
+                'hostgroup': {
+                    'hostgroup': 'host_group',
+                    'neg_hostgroup': 'neg_host_group',
+                },
+                'servicegroup': {
+                    'servicegroup': 'service_group',
+                    'neg_servicegroup': 'neg_service_group',
+                },
+                'host_contactgroup': {
+                    'host_contactgroup': 'host_contact_group',
+                    'neg_host_contactgroup': 'neg_host_contact_group',
+                },
+                'service_contactgroup': {
+                    'service_contactgroup': 'service_contact_group',
+                    'neg_service_contactgroup': 'neg_service_contact_group',
+                },
+            }
 
-            single_keys = visuals.get_single_info_keys(view)
+            if filter_name in changed_filter_vars and f.info in datasource['infos']:
+                for old_var, new_var in changed_filter_vars[filter_name].items():
+                    if old_var in filtervars:
+                        value = filtervars[old_var]
+                        all_vars[new_var] = value
+                        context[filter_name][new_var] = value
 
-            # First get vars for the classic filters
-            context = {}
-            filtervars = dict(view['hard_filtervars'])
-            all_vars = {}
-            for filter_name in view['show_filters']:
-                if filter_name in single_keys:
-                    continue # skip conflictings vars / filters
+        # Now, when there are single object infos specified, add these keys to the
+        # context
+        for single_key in single_keys:
+            if single_key in all_vars:
+                context[single_key] = all_vars[single_key]
 
-                context.setdefault(filter_name, {})
-                try:
-                    f = visuals.get_filter(filter_name)
-                except:
-                    # The exact match filters have been removed. They where used only as
-                    # link filters anyway - at least by the builtin views.
-                    continue
+        view['context'] = context
 
-                for var in f.htmlvars:
-                    # Check whether or not the filter is supported by the datasource,
-                    # then either skip or use the filter vars
-                    if var in filtervars and f.info in datasource['infos']:
-                        value = filtervars[var]
-                        all_vars[var] = value
-                        context[filter_name][var] = value
-
-                # We changed different filters since the visuals-rewrite. This must be treated here, since
-                # we need to transform views which have been created with the old filter var names.
-                # Changes which have been made so far:
-                changed_filter_vars = {
-                    'serviceregex': { # Name of the filter
-                        # old var name: new var name
-                        'service': 'service_regex',
-                    },
-                    'hostregex': {
-                        'host': 'host_regex',
-                    },
-                    'hostgroupnameregex': {
-                        'hostgroup_name': 'hostgroup_regex',
-                    },
-                    'servicegroupnameregex': {
-                        'servicegroup_name': 'servicegroup_regex',
-                    },
-                    'opthostgroup': {
-                        'opthostgroup': 'opthost_group',
-                        'neg_opthostgroup': 'neg_opthost_group',
-                    },
-                    'optservicegroup': {
-                        'optservicegroup': 'optservice_group',
-                        'neg_optservicegroup': 'neg_optservice_group',
-                    },
-                    'hostgroup': {
-                        'hostgroup': 'host_group',
-                        'neg_hostgroup': 'neg_host_group',
-                    },
-                    'servicegroup': {
-                        'servicegroup': 'service_group',
-                        'neg_servicegroup': 'neg_service_group',
-                    },
-                    'host_contactgroup': {
-                        'host_contactgroup': 'host_contact_group',
-                        'neg_host_contactgroup': 'neg_host_contact_group',
-                    },
-                    'service_contactgroup': {
-                        'service_contactgroup': 'service_contact_group',
-                        'neg_service_contactgroup': 'neg_service_contact_group',
-                    },
-                }
-
-                if filter_name in changed_filter_vars and f.info in datasource['infos']:
-                    for old_var, new_var in changed_filter_vars[filter_name].items():
-                        if old_var in filtervars:
-                            value = filtervars[old_var]
-                            all_vars[new_var] = value
-                            context[filter_name][new_var] = value
-
-            # Now, when there are single object infos specified, add these keys to the
-            # context
-            for single_key in single_keys:
-                if single_key in all_vars:
-                    context[single_key] = all_vars[single_key]
-
-            view['context'] = context
-
-        # Cleanup unused attributes
-        for k in [ 'hide_filters', 'hard_filters', 'show_filters', 'hard_filtervars' ]:
-            try:
-                del view[k]
-            except KeyError:
-                pass
+    # Cleanup unused attributes
+    for k in [ 'hide_filters', 'hard_filters', 'show_filters', 'hard_filtervars' ]:
+        try:
+            del view[k]
+        except KeyError:
+            pass
 
 def save_views(us):
     visuals.save('views', multisite_views)
@@ -891,6 +888,8 @@ def prepare_display_options():
 
     display_options = apply_display_option_defaults(display_options)
     # Add the display_options to the html object for later linking etc.
+    # TODO: This is not nice. It's not the task of the html object to keep
+    # information about views or stuff.
     html.display_options = display_options
 
     # This is needed for letting only the data table reload. The problem is that
@@ -922,6 +921,7 @@ def prepare_display_options():
     # Below we have the following display_options vars:
     # html.display_options        - Use this when rendering the current view
     # html.var("display_options") - Use this for linking to other views
+    # TODO: ... and a third one that is returned here. Which one is that?!?
     return display_options
 
 
@@ -937,7 +937,7 @@ def show_view(view, show_heading = False, show_buttons = True,
     display_options = prepare_display_options()
 
     # User can override the layout settings via HTML variables (buttons)
-    # which are safed persistently. This is known as "view options". Note: a few
+    # which are safed persistently. This is known as "view options". Note: a view
     # can be anonymous (e.g. when embedded into a report). In that case there
     # are no display options.
     if "name" in view:
@@ -1020,6 +1020,7 @@ def show_view(view, show_heading = False, show_buttons = True,
     # the limit was not applied on the resulting rows but on the
     # lines of the log processed. This resulted in wrong stats.
     # For these datasources we ignore the query limits.
+    # TODO: let the limit be handled by the datasource itself.
     if limit == None: # Otherwise: specified as argument
         if not datasource.get('ignore_limit', False):
             limit = get_limit()
@@ -1190,6 +1191,7 @@ def render_view(view, rows, datasource, group_painters, painters,
                 show_checkboxes, layout, num_columns, show_filters, show_footer,
                 browser_reload):
 
+    # Inhibit reloading while we are in command confirmation mode
     if html.transaction_valid() and html.do_actions():
         html.set_browser_reload(0)
 
@@ -2574,6 +2576,7 @@ def ajax_popup_action_menu():
     svcdesc = html.var('service')
     what    = svcdesc and 'service' or 'host'
 
+    # TODO: Why is this line here?
     prepare_display_options()
 
     row = query_action_data(what, host, site, svcdesc)
@@ -2649,6 +2652,9 @@ class Datasource(elements.Element):
 
     # TODO: Eine Datasource muss wissen, welche Spalten überhaupt da sind? War bisher
     # aber auch nicht der Fall.
+
+elements.register_element_type(Datasource)
+
 
 class LivestatusDatasource(Datasource):
     def __init__(self, **kwargs):
@@ -2747,25 +2753,27 @@ class Painter(elements.Element):
     def required_columns(self):
         return self._["columns"]
 
+elements.register_element_type(Painter)
 
 # Convert legacy style painters into the new class form
 
 def declare_painter(painter):
     Painter.add_instance(painter.name(), painter)
 
+
 #.
-#   .--Views---------------------------------------------------------------.
-#   |                    __     ___                                        |
-#   |                    \ \   / (_) _____      _____                      |
-#   |                     \ \ / /| |/ _ \ \ /\ / / __|                     |
-#   |                      \ V / | |  __/\ V  V /\__ \                     |
-#   |                       \_/  |_|\___| \_/\_/ |___/                     |
+#   .--Tables--------------------------------------------------------------.
+#   |                     _____     _     _                                |
+#   |                    |_   _|_ _| |__ | | ___  ___                      |
+#   |                      | |/ _` | '_ \| |/ _ \/ __|                     |
+#   |                      | | (_| | |_) | |  __/\__ \                     |
+#   |                      |_|\__,_|_.__/|_|\___||___/                     |
 #   |                                                                      |
 #   +----------------------------------------------------------------------+
-#   |  New code for displaying views                                       |
+#   |  Tables aree that what was formerly known as "View".                 |
 #   '----------------------------------------------------------------------'
 
-class View(elements.PageRenderer, elements.Overridable, elements.ContextAware, elements.Element):
+class Table(elements.PageRenderer, elements.Overridable, elements.ContextAware, elements.Element):
     def __init__(self, d):
         elements.Element.__init__(self, d)
         try:
@@ -2774,36 +2782,31 @@ class View(elements.PageRenderer, elements.Overridable, elements.ContextAware, e
             pass
             # TODO: Das hier wieder aktivieren und sicherstellen, dass alle DS da sind.
             # if config.debug:
-            #     raise MKGeneralException("View %s: datasource %s is missing" % (d["name"], d["datasource"]))
+            #     raise MKGeneralException("Table %s: datasource %s is missing" % (d["name"], d["datasource"]))
 
     @classmethod
     def type_name(self):
-        return "view"
+        return "table"
 
     @classmethod
     def phrase(self, what):
         return {
-            "title"          : _("View"),
-            "title_plural"   : _("Views"),
-            "clone"          : _("Clone View"),
-            "create"         : _("Create View"),
-            "edit"           : _("Edit View"),
+            "title"          : _("Table"),
+            "title_plural"   : _("Tables"),
+            "clone"          : _("Clone Table"),
+            "create"         : _("Create Table"),
+            "edit"           : _("Edit Table"),
         }.get(what, elements.Element.phrase(what))
 
     @classmethod
-    def sanitize(self, d):
-        d.setdefault("single_infos", [])
-        # TODO: Hier das umstellen von alten Viewdefinitionen auf neue
+    def ident_attr(self):
+        return "view_name" # Make URLs compatible with old views.
 
-    # TODO: Das hier muss dann wieder raus, wenn wir auf die
-    # neuen Views umstellen und die alten rauswerfen! Die Funktion
-    # gibt es in der Klasse overridable, aber es installiert
-    # nämlich einen neuen Handler für view.py, und wir wollen
-    # vorerst view_new.py verwenden! Dann in pages/shipped
-    # die manuellen Handler entfernen!
     @classmethod
-    def page_handlers(self):
-        return {}
+    def sanitize(self, d):
+        transform_old_view(d)
+        # d.setdefault("single_infos", [])
+        # TODO: Hier das umstellen von alten Viewdefinitionen auf neue
 
     @classmethod
     def builtin_pages(self):
@@ -2843,15 +2846,33 @@ class View(elements.PageRenderer, elements.Overridable, elements.ContextAware, e
 
     # Renders a view in HTML.
     # TODO: Allow specifying a context that comes not from the URL?
-    def render_html(self, context):
-        context = self.context()
+    def render_html(self, external_context):
 
-        # context = self.get_context_from_url()
-        # TODO: Merge context that is hardcoded in view itself
+        # Zum malen der View brauchen wir:
+        # 1. die View
+        # 2. den Context
+        # 3. die render_options. Diese bestehen aus:
+        # - display_options
+        # - display_options for links??
+        # - view_options (num_columns, etc.)
+        # - painter_options (Zeitformat)
+        # - aktuelles Limit
+        # - layout_options (gibt es noch nicht)
+        # - ob checkboxen aktiviert sind
+
+        # Combine the intrinsic context (aka hard coded selectors in the view)
+        # and the URL context (user settings of selectors) Both context
+        # types share the same infos and single infos.  The context from
+        # the URL has precedence.
+        # TODO: Cannot put we that lines into the base class ContextAware?
+        context = self.get_intrinsic_context()
+        context.update(external_context)
+        self.validate_single_infos(context)
+
         columns = sorted(list(self.required_columns()))
         # TODO: Limit
         rows = self.datasource().query(columns, context)
-        html.debug(("ROWS", rows))
+        html.debug(("ROWS", rows[0]))
         return
 
         # TODO: Das do_table_join() muss in die Datasoucre irgendwie rein
@@ -2867,21 +2888,44 @@ class View(elements.PageRenderer, elements.Overridable, elements.ContextAware, e
         html.debug(self._["painters"])
         p = [ (multisite_painters[e[0]],) + e[1:] for e in self._["painters"] if e[0] in multisite_painters ]
         display_options = prepare_display_options()
-        render_view(self._, rows, ds, [], p, 
+        render_view(self._, rows, ds, [], p,
                     display_options, {}, True, True, True, layout, 3, True, True, 50)
 
-    # Was brauche ich zum Malen einer View: Statisch in der View sind painters,
+    # Overridden from PageRenderer
+    def render(self):
+        render_options = self.get_render_options()
+        self.render_html(self.get_context_from_url())
+
+
+    # TODO: only_count. Das mache ich komplett ohne den ganzen show_view()
+    # mist.  Das macht einfach die Datasource. Wir brauchen nur den Kontext und
+    # die Datasource und die muss in der Lage sein, die Anzahl zu ermitteln
+    # - effizient.
+
+    # show context links: Das könnte man doch unabhängig von der View definieren.
+    # Die Verknüpfung zu anderen Views und sonstigen anderen Dingen sollte übergreifend
+    # funktionieren. Damit bekommt man auch das mit der Availability besser in den
+    # Griff. Eigenlich muss jeder ContextAware-PageHandler hier beteiligt werden.
+
+    # Dazu kommen dann noch die Knöpfe, die für die View spezifisch sind.
+
+    # Was brauche ich zum Malen einer Table: Statisch in der Table sind painters,
     # group_painters, layout. Dynamisch sind context und rows. Den context
     # brauche ich z.B. für den Titel. Allerdings könnte man auch das mit
     # dem Titel gleich so umbauen, dass nur die single_infos angezeigt werden
     # und ein Icon davor. jedes Info bekommt ein Icon. Dann muss man für
     # view_titel nicht auf Selektoren zurückgreifen.
 
-# TODO: Move this to member method page_show of View later.
-def page_view_new():
-    # View.load() # Loads builtin and also user's views
-    view_name = html.var("view_name")
-    view = View.find_page(view_name)
-    context = view.get_context_from_url()
-    view.render_html(context)
+    # Der PageRenderer() ist für das Hauptlayout der Seite verantwortlich.
+    # Titel. Uhrzeit. Hilfeknopf. Footer.
 
+elements.register_element_type(Table)
+
+# Aktuell wird show_view() aufgerufen:              headi  butto  foot
+# page_view() -> normales Anzeigen  show_view(view, True,  True,  True)
+# mobile -> page_view()             show_view(view, False, False, False, render_function = render_view)
+# reporting                         show_view(view, False, False, False)
+# mobile -> page_index              show_view(view, False, True,  True, only_count = True)
+
+# Wird entfernt
+# page_edit_view() -> try_handler   show_view(view, False, False, True)

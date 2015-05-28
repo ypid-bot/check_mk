@@ -48,7 +48,7 @@ except ImportError:
 # Global dict of all page types, e.g. subclasses of Element
 element_types = {}
 
-def declare_element_type(element_type):
+def register_element_type(element_type):
     element_types[element_type.type_name()] = element_type
     element_type.declare_permissions()
 
@@ -368,6 +368,8 @@ class PageRenderer:
     # TODO: Anscheinend werden alle Views schon geladen,
     # bevor überhaupt ein Request läuft. Da ist eine load()-Funktion,
     # die stört. Brauchen wir die hier schon?
+    # TODO: Das edit_ und list ist doch eine Sache von Overridable. Das gehört
+    # hier doch garnicht hin!
     @classmethod
     def page_handlers(self):
         return {
@@ -380,6 +382,9 @@ class PageRenderer:
     @classmethod
     def page_show(self):
         name = html.var(self.ident_attr())
+        if name == None:
+            raise MKGeneralException(_("You need to specify the name of the %s "
+                       "you want to show in the URL variable \"<tt>%s</tt>\".") % (self.phrase("title"), self.ident_attr()))
         page = self.find_page(name)
         if not page:
             raise MKGeneralException(_("Cannot find %s with the name %s") % (
@@ -944,7 +949,7 @@ class ContextAware(Element):
     # Return the intrinsic context of a ContextAware. This is taken from
     # the dict variable "context" if that is present. An empty context
     # is being returned if that is missing.
-    def context(self):
+    def get_intrinsic_context(self):
         return Context(self.infos(), self.single_infos(), self._.get("context", {}))
 
     # Construct a context from current URL variables. This takes infos and
@@ -954,14 +959,16 @@ class ContextAware(Element):
         context_dict = {}
         for selector in Selector.instances():
             if selector.info() in self.infos() and \
-               selector.info() not in self.single_infos() and \
                selector.is_active():
                context_dict[selector.name()] = selector.get_selector_context()
-        # TODO: Hier fehlen die single infos. Diese laufen nicht über
-        # selektoren, sondern über Hilfsfunktionen in info.
         return Context(self.infos(), self.single_infos(), context_dict)
 
-
+    def validate_single_infos(self, context):
+        for info_name in self.single_infos():
+            if info_name not in context:
+                raise MKGeneralException(_("This %s cannot be rendered. It is missing "
+                                           "the specification of \"<b>%s</b>\"." %
+                                           (self.phrase("title"), Info.instance(info_name).title())))
 
 
 #.
@@ -1085,7 +1092,7 @@ class Info(Element):
         }.get(what, elements.Element.phrase(what))
 
 
-declare_element_type(Info)
+register_element_type(Info)
 
 def register_info(info):
     Info.add_instance(info.name(), info)
@@ -1198,7 +1205,7 @@ class Selector(Element):
     def select_rows(self, rows, selector_context):
         return rows
 
-declare_element_type(Selector)
+register_element_type(Selector)
 
 def register_selector(selector):
     Selector.add_instance(selector.name(), selector)
@@ -1232,21 +1239,28 @@ class Context(Element):
         for key, value in context_dict.items():
             if type(value) == dict:
                 sanitized[key] = value
+            else:
+                sanitized[key] = { key: value }
 
-        # TODO: einen generischeren Weg finden, als das hier alles hart zu
-        for info_name in self.single_infos():
-            if info_name in [ "host", "service" ]:
-                if info_name in context_dict:
-                    sanitized[info_name] = { info_name : context_dict[info_name] }
-
+        # TODO: Problem ist, dass das umwandeln nicht immer stimmt, da früher
+        # bei single-Kontexten einzelne URL-Variablen als Keys verwendet wurden
+        # und heute ganz normale Selektor-Namen.
         return sanitized
-
 
     def infos(self):
         return self._infos
 
     def single_infos(self):
         return self._single_infos
+
+    # Much like a dict update, but we make sure that the original
+    # dict (which we might have borrowed from somewhere) is not
+    # changed.
+    def update(self, other):
+        new_dict = {}
+        new_dict.update(self._)
+        new_dict.update(other._)
+        self._ = new_dict
 
     def livestatus_filters(self):
         # TODO: single infos
