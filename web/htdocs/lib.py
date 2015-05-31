@@ -98,6 +98,15 @@ def mandatory(func):
         raise MKInternalError(_("Missing implementation of function. arguments: %r, keyword arguments: %r") % (args, kwargsS))
     return stub
 
+# A decorator that logs the call of a function
+def debug(func):
+    def wrapped(*args, **kwargs):
+        result = func(*args, **kwargs)
+        html.write(("<b>CALL:</b> %s(%s, %s) = <b>%r</b><br>\n" % (
+            func.func_name, ", ".join(map(repr, args)), ", ".join(["%s=%r" % (k,v) for (k,v) in kwargs.items()]), result)))
+        return result
+    return wrapped
+
 # Create directory owned by common group of Nagios and webserver,
 # and make it writable for the group
 def make_nagios_directory(path):

@@ -266,10 +266,13 @@ class Element:
     def remove_instance(self, key):
         del self.instances_dict()[key]
 
-    # Return a list of all instances of this type
     @classmethod
     def instances(self):
         return self.instances_dict().values()
+
+    @classmethod
+    def has_instance(self, key):
+        return key in self.__instances
 
     @classmethod
     def instance(self, key):
@@ -970,6 +973,16 @@ class ContextAware(Element):
                                            "the specification of \"<b>%s</b>\"." %
                                            (self.phrase("title"), Info.instance(info_name).title())))
 
+    # Combine the intrinsic context (aka hard coded selectors in the view)
+    # and the context from the outside (e.g. from URL or from report
+    # or from dashboard). Both context types share the same infos and
+    # single infos. The context from the URL has precedence.
+    def build_inner_context(self, external_context):
+        context = self.get_intrinsic_context()
+        context.update(external_context)
+        self.validate_single_infos(context)
+        return context
+
 
 #.
 #   .--Container-----------------------------------------------------------.
@@ -1266,8 +1279,10 @@ class Context(Element):
         # TODO: single infos
         headers = ""
         for selector_name, selector_context in self._.items():
-            # Pick out the multi contexts. Single contexts are unicode type
-            if type(selector_context) == dict:
+            if not Selector.has_instance(selector_name):
+                # TODO: html.debug("%s gibts noch nicht. Ignoriere das..." % selector_name)
+                pass
+            else:
                 selector = Selector.instance(selector_name)
                 headers += selector.livestatus_headers(selector_context)
         return headers
@@ -1275,7 +1290,10 @@ class Context(Element):
     # Non-Livestatus filtering (e.g. for BI tables)
     def select_rows(self, rows, context):
         for selector_name, selector_context in self._.items():
-            if type(selector_context) == dict:
+            if not Selector.has_instance(selector_name):
+                # TODO: html.debug("%s gibts noch nicht. Ignoriere das..." % selector_name)
+                pass
+            else:
                 selector = Selector.instance(selector_name)
                 rows = selector.select_rows(rows, selector_context)
         return rows

@@ -1338,6 +1338,7 @@ def render_view(view, rows, datasource, group_painters, painters,
             html.body_end()
 
 # We should rename this into "painter_options". Also the saved file.
+# TODO: Move this to be a member function of TableView
 def view_options(viewname):
     # Options are stored per view. Get all options for all views
     vo = config.load_user_file("viewoptions", {})
@@ -2762,18 +2763,17 @@ def declare_painter(painter):
 
 
 #.
-#   .--Tables--------------------------------------------------------------.
-#   |                     _____     _     _                                |
-#   |                    |_   _|_ _| |__ | | ___  ___                      |
-#   |                      | |/ _` | '_ \| |/ _ \/ __|                     |
-#   |                      | | (_| | |_) | |  __/\__ \                     |
-#   |                      |_|\__,_|_.__/|_|\___||___/                     |
+#   .--TableViews----------------------------------------------------------.
+#   |          _____     _     _    __     ___                             |
+#   |         |_   _|_ _| |__ | | __\ \   / (_) _____      _____           |
+#   |           | |/ _` | '_ \| |/ _ \ \ / /| |/ _ \ \ /\ / / __|          |
+#   |           | | (_| | |_) | |  __/\ V / | |  __/\ V  V /\__ \          |
+#   |           |_|\__,_|_.__/|_|\___| \_/  |_|\___| \_/\_/ |___/          |
 #   |                                                                      |
 #   +----------------------------------------------------------------------+
 #   |  Tables aree that what was formerly known as "View".                 |
 #   '----------------------------------------------------------------------'
-
-class Table(elements.PageRenderer, elements.Overridable, elements.ContextAware, elements.Element):
+class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAware, elements.Element):
     def __init__(self, d):
         elements.Element.__init__(self, d)
         try:
@@ -2782,11 +2782,11 @@ class Table(elements.PageRenderer, elements.Overridable, elements.ContextAware, 
             pass
             # TODO: Das hier wieder aktivieren und sicherstellen, dass alle DS da sind.
             # if config.debug:
-            #     raise MKGeneralException("Table %s: datasource %s is missing" % (d["name"], d["datasource"]))
+            #     raise MKGeneralException("TableView %s: datasource %s is missing" % (d["name"], d["datasource"]))
 
     @classmethod
     def type_name(self):
-        return "table"
+        return "tableview"
 
     @classmethod
     def phrase(self, what):
@@ -2846,9 +2846,9 @@ class Table(elements.PageRenderer, elements.Overridable, elements.ContextAware, 
 
     # Renders a view in HTML.
     # TODO: Allow specifying a context that comes not from the URL?
-    def render_html(self, external_context):
+    def render_html(self, context, render_options):
 
-        # Zum malen der View brauchen wir:
+        # Zum malen der TableView (View) brauchen wir:
         # 1. die View
         # 2. den Context
         # 3. die render_options. Diese bestehen aus:
@@ -2860,19 +2860,13 @@ class Table(elements.PageRenderer, elements.Overridable, elements.ContextAware, 
         # - layout_options (gibt es noch nicht)
         # - ob checkboxen aktiviert sind
 
-        # Combine the intrinsic context (aka hard coded selectors in the view)
-        # and the URL context (user settings of selectors) Both context
-        # types share the same infos and single infos.  The context from
-        # the URL has precedence.
-        # TODO: Cannot put we that lines into the base class ContextAware?
-        context = self.get_intrinsic_context()
-        context.update(external_context)
-        self.validate_single_infos(context)
+
 
         columns = sorted(list(self.required_columns()))
         # TODO: Limit
         rows = self.datasource().query(columns, context)
         html.debug(("ROWS", rows[0]))
+        html.debug(("RENDER_OPTIONS", render_options))
         return
 
         # TODO: Das do_table_join() muss in die Datasoucre irgendwie rein
@@ -2893,10 +2887,141 @@ class Table(elements.PageRenderer, elements.Overridable, elements.ContextAware, 
 
     # Overridden from PageRenderer
     def render(self):
+        context = self.build_inner_context(self.get_context_from_url())
         render_options = self.get_render_options()
-        self.render_html(self.get_context_from_url())
+        self.render_html(context, render_options)
+
+    def get_render_options(self):
+        return {
+            # "view_options"    : self.get_view_options(),
+            "painter_options" : self.prepare_painter_options(),
+            # "display_options" : self.get_display_options(),
+            # "limit"           : self.get_limit(),
+            # TODO: checkboxes
+            # TODO: layout options
+        }
 
 
+    def prepare_painter_options(self):
+        options = {}
+        options.update(self.get_painter_options_defaults())
+        if self.may_change_painter_options():
+            options.update(self.get_painter_options_from_file())
+            options.update(self.get_painter_options_from_url())
+            self.save_changed_painter_options(options)
+        return options
+
+    def get_painter_options_defaults(self):
+        options = {}
+        for option_name, option in multisite_painter_options.items():
+            options[option_name] = option["valuespec"].default_value()
+        return options
+
+    def get_painter_options_from_url(self):
+        options = {}
+        for option_name, option in multisite_painter_options.items():
+            if self.painter_option_present_in_url(option_name):
+                options[option_name] = self.painter_option_from_url(option_name, option)
+        return options
+
+    def painter_option_present_in_url(self, option_name):
+        var_prefix = 'po_' + option_name
+        return html.has_var_prefix(var_prefix)
+
+    def painter_option_from_url(self, option_name, option):
+        vs = option['valuespec']
+        var_prefix = 'po_' + option_name
+        html.debug(html.var(var_prefix))
+        return vs.from_html_vars(var_prefix)
+
+    def get_painter_options_from_file(self):
+        options_for_all_views = config.load_user_file("viewoptions", {})
+        view_options = options_for_all_views.get(self.name(), {})
+        painter_options = dict([
+            (k,v) 
+            for (k,v) in view_options.items()
+            if k in multisite_painter_options])
+        return painter_options
+
+    def save_changed_painter_options(self, options):
+        options_for_all_views = config.load_user_file("viewoptions", {})
+        view_options = options_for_all_views.setdefault(self.name(), {}) # also contains non-painter options!
+        defaults = self.get_painter_options_defaults()
+        changed = False
+        for opt_name, default_value in defaults.items():
+            html.debug(opt_name)
+            if options[opt_name] != default_value:
+                view_options[opt_name] = options[opt_name]
+                changed = True
+            elif opt_name in view_options:
+                del view_options[opt_name] # remove explicit setting
+                changed = True
+        if changed:
+            config.save_user_file("viewoptions", options_for_all_views)
+
+    def provide_options_for_painters(self, options):
+        for option_name, value in options:
+            multisite_painter_options[option_name]["value"] = value
+
+    def may_change_painter_options(self):
+        return config.may("general.painter_options")
+
+
+    # We should rename this into "painter_options". Also the saved file.
+    # TODO: Move this to be a member function of TableView
+    def view_options(viewname):
+        # Options are stored per view. Get all options for all views
+        vo = config.load_user_file("viewoptions", {})
+
+        # Now get options for the view in question
+        v = vo.get(viewname, {})
+        must_save = False
+
+        # Now override the loaded options with new option settings that are
+        # provided by the URL. Our problem: we do not know the URL variables
+        # that a valuespec expects. But we know the common prefix of all
+        # variables for each option.
+        if config.may("general.painter_options"):
+            for option_name, opt in multisite_painter_options.items():
+                have_old_value = option_name in v
+                if have_old_value:
+                    old_value = v.get(option_name)
+
+                # Are there settings for this painter option present?
+                var_prefix = 'po_' + option_name
+                if html.has_var_prefix(var_prefix):
+
+                    # Get new value for the option from the value spec
+                    vs = opt['valuespec']
+                    value = vs.from_html_vars(var_prefix)
+
+                    v[option_name] = value
+                    opt['value'] = value # make globally present for painters
+
+                    if not have_old_value or v[option_name] != old_value:
+                        must_save = True
+
+                elif have_old_value:
+                    opt['value'] = old_value # make globally present for painters
+                elif 'value' in opt:
+                    del opt['value']
+
+        # If the user has no permission for changing painter options
+        # (or has *lost* his permission) then we need to remove all
+        # of the options. But we do not save.
+        else:
+            for on, opt in multisite_painter_options.items():
+                if on in v:
+                    del v[on]
+                    must_save = True
+                if 'value' in opt:
+                    del opt['value']
+
+        if must_save:
+            vo[viewname] = v
+            config.save_user_file("viewoptions", vo)
+
+        return v
     # TODO: only_count. Das mache ich komplett ohne den ganzen show_view()
     # mist.  Das macht einfach die Datasource. Wir brauchen nur den Kontext und
     # die Datasource und die muss in der Lage sein, die Anzahl zu ermitteln
@@ -2909,7 +3034,7 @@ class Table(elements.PageRenderer, elements.Overridable, elements.ContextAware, 
 
     # Dazu kommen dann noch die Knöpfe, die für die View spezifisch sind.
 
-    # Was brauche ich zum Malen einer Table: Statisch in der Table sind painters,
+    # Was brauche ich zum Malen einer TableView: Statisch in der TableView sind painters,
     # group_painters, layout. Dynamisch sind context und rows. Den context
     # brauche ich z.B. für den Titel. Allerdings könnte man auch das mit
     # dem Titel gleich so umbauen, dass nur die single_infos angezeigt werden
@@ -2919,7 +3044,7 @@ class Table(elements.PageRenderer, elements.Overridable, elements.ContextAware, 
     # Der PageRenderer() ist für das Hauptlayout der Seite verantwortlich.
     # Titel. Uhrzeit. Hilfeknopf. Footer.
 
-elements.register_element_type(Table)
+elements.register_element_type(TableView)
 
 # Aktuell wird show_view() aufgerufen:              headi  butto  foot
 # page_view() -> normales Anzeigen  show_view(view, True,  True,  True)
