@@ -24,36 +24,6 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-def init_rowselect(view):
-    # Don't make rows selectable when no commands can be fired
-    # Ignore "C" display option here. Otherwise the rows will not be selectable
-    # after view reload.
-    if not config.may("general.act"):
-        return
-
-    selected = weblib.get_rowselection('view-' + view['name'])
-    html.javascript(
-        'g_page_id = "view-%s";\n'
-        'g_selection = "%s";\n'
-        'g_selected_rows = %s;\n'
-        'init_rowselect();' % (view['name'], weblib.selection_id(), repr(selected))
-    )
-
-def render_checkbox(view, row, num_tds):
-    # value contains the number of columns of this datarow. This is
-    # needed for hiliting the correct number of TDs
-    html.write("<input type=checkbox name=\"%s\" value=%d />" %
-                                    (row_id(view, row), num_tds + 1))
-
-def render_checkbox_td(view, row, num_tds):
-    html.write("<td class=checkbox>")
-    render_checkbox(view, row, num_tds)
-    html.write("</td>")
-
-def render_group_checkbox_th():
-    html.write("<th><input type=button class=checkgroup name=_toggle_group"
-               " onclick=\"toggle_group_rows(this);\" value=\"%s\" /></th>" % _('X'))
-
 #.
 #   .--Dataset-------------------------------------------------------------.
 #   |                  ____        _                 _                     |
@@ -227,7 +197,6 @@ def render_grouped_boxes(rows, view, group_painters, painters, num_columns, show
             html.write("</tr>\n")
 
         html.write("</table>\n")
-        init_rowselect(view)
 
     # render table
     html.write("<table class=boxlayout><tr>")
@@ -330,7 +299,6 @@ def render_tiled(rows, view, group_painters, painters, _ignore_num_columns, show
     if group_open:
         html.write("</td></tr>\n")
     html.write("</table>\n")
-    init_rowselect(view)
 
 
 multisite_layouts["tiled"] = {
@@ -493,7 +461,6 @@ def render_grouped_list(rows, view, group_painters, painters, num_columns, show_
             html.write("<td class=fillup colspan=%d></td>" % num_painters)
         html.write("</tr>\n")
     html.write("</table>\n")
-    init_rowselect(view)
 
 multisite_layouts["table"] = {
     "title"  : _("Table"),
@@ -501,6 +468,9 @@ multisite_layouts["table"] = {
     "group"  : True,
     "checkboxes" : True,
 }
+
+# TODO: Remove old declaration. Remove name argument
+register_view_layout("table", multisite_layouts["table"])
 
 
 #.

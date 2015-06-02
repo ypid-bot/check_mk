@@ -123,7 +123,7 @@ class Element:
         return key in self._
 
     def pformat(self):
-        return pprint.pformat(self._)
+        return self.type_name() + ": " + pprint.pformat(self._)
 
     # You always must override the following method. Not all phrases
     # might be neccessary depending on the type of you page.
@@ -133,9 +133,8 @@ class Element:
     # "add_to"       : Text like "Add to foo bar..."
     # TODO: Look at GraphCollection for the complete list of phrases to
     # be defined for each page type and explain that here.
-    @classmethod
-    def phrase(self, phrase):
-        return _("MISSING '%s'") % phrase
+    # def phrase(self, phrase):
+    #   return "%s: %s" % (phrase, self.type_name())
 
     # You can override this if you class needs any permissions to
     # be declared. Note: currently only *one* of the classes in the

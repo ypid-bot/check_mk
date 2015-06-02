@@ -90,7 +90,7 @@ def load_plugins():
     # ja, weil das ja dann in den Plugins läuft.
     for name, entry in multisite_painters.items():
         entry["name"] = name
-        declare_painter(Painter(entry))
+        declare_painter_type(PainterType(entry))
 
 
 
@@ -1279,6 +1279,9 @@ def render_view(view, rows, datasource, group_painters, painters,
             html.check_limit(rows, get_limit())
         layout["render"](rows, view, group_painters, painters, num_columns,
                          show_checkboxes and not html.do_actions())
+        if layout["checkboxes"]:
+            init_rowselect(view["name"])
+
         headinfo = "%d %s" % (row_count, row_count == 1 and _("row") or _("rows"))
         if show_checkboxes:
             selected = filter_selected_rows(view, rows, weblib.get_rowselection('view-' + view['name']))
@@ -1336,6 +1339,38 @@ def render_view(view, rows, datasource, group_painters, painters,
 
         if 'H' in display_options:
             html.body_end()
+
+
+def init_rowselect(view_name):
+    # Don't make rows selectable when no commands can be fired
+    # Ignore "C" display option here. Otherwise the rows will not be selectable
+    # after view reload.
+    if not config.may("general.act"):
+        return
+
+    selected = weblib.get_rowselection('view-' + view_name)
+    html.javascript(
+        'g_page_id = "view-%s";\n'
+        'g_selection = "%s";\n'
+        'g_selected_rows = %s;\n'
+        'init_rowselect();' % (view_name, weblib.selection_id(), repr(selected))
+    )
+
+def render_checkbox(view, row, num_tds):
+    # value contains the number of columns of this datarow. This is
+    # needed for hiliting the correct number of TDs
+    html.write("<input type=checkbox name=\"%s\" value=%d />" %
+                                    (row_id(view, row), num_tds + 1))
+
+def render_checkbox_td(view, row, num_tds):
+    html.write("<td class=checkbox>")
+    render_checkbox(view, row, num_tds)
+    html.write("</td>")
+
+def render_group_checkbox_th():
+    html.write("<th><input type=button class=checkgroup name=_toggle_group"
+               " onclick=\"toggle_group_rows(this);\" value=\"%s\" /></th>" % _('X'))
+
 
 # We should rename this into "painter_options". Also the saved file.
 # TODO: Move this to be a member function of TableView
@@ -2117,6 +2152,10 @@ def join_row(row, p):
         return row
 
 def prepare_paint(p, row):
+    if isinstance(p, Painter):
+        return p.get_tdclass_and_content(row)
+
+    # Legacy implementation without Elements
     painter = p[0]
     linkview = p[1]
     tooltip = len(p) > 2 and p[2] or None
@@ -2184,7 +2223,11 @@ def url_to_view(row, view_name):
         return filename + "?" + html.urlencode_vars([("view_name", view_name)] + url_vars)
 
 def link_to_view(content, row, view_name):
-    if 'I' not in html.display_options:
+    try:
+        if 'I' not in html.display_options:
+            return content
+    except:
+        # New implementation has now html.display_options
         return content
 
     url = url_to_view(row, view_name)
@@ -2322,20 +2365,25 @@ def sort_url(view, painter, join_index):
     return ','.join(p)
 
 def paint_header(view, p):
-    # The variable p is a tuple with the following components:
-    # p[0] --> painter object, from multisite_painters[]
-    # p[1] --> view name to link to or None (not needed here)
-    # p[2] --> tooltip (title) to display (not needed here)
-    # p[3] --> optional: join key (e.g. service description)
-    # p[4] --> optional: column title to use instead default
-    painter = p[0]
-    join_index = None
-    t = painter.get("short", painter["title"])
-    if len(p) >= 4: # join column
-        join_index = p[3]
-        t = p[3] # use join index (service name) as title
-    if len(p) >= 5 and p[4]:
-        t = p[4] # use custom defined title
+    if isinstance(p, Painter):
+        title_text = p.get_column_header()
+        html.write("<th class=sort>%s</th>" % (title_text))
+        return
+    else:
+        # The variable p is a tuple with the following components:
+        # p[0] --> painter object, from multisite_painters[]
+        # p[1] --> view name to link to or None (not needed here)
+        # p[2] --> tooltip (title) to display (not needed here)
+        # p[3] --> optional: join key (e.g. service description)
+        # p[4] --> optional: column title to use instead default
+        painter = p[0]
+        join_index = None
+        title_text = painter.get("short", painter["title"])
+        if len(p) >= 4: # join column
+            join_index = p[3]
+            title_text = p[3] # use join index (service name) as title
+        if len(p) >= 5 and p[4]:
+            title_text = p[4] # use custom defined title
 
     # Optional: Sort link in title cell
     # Use explicit defined sorter or implicit the sorter with the painter name
@@ -2359,9 +2407,9 @@ def paint_header(view, p):
 
         thclass = ' class="sort %s"' % get_primary_sorter_order(view, painter)
         onclick = ' onclick="location.href=\'%s\'"' % html.makeuri(params, 'sort')
-        title   = ' title="%s"' % (_('Sort by %s') % t)
+        title   = ' title="%s"' % (_('Sort by %s') % title_text)
 
-    html.write("<th%s%s%s>%s</th>" % (thclass, onclick, title, t))
+    html.write("<th%s%s%s>%s</th>" % (thclass, onclick, title, title_text))
 
 def register_events(row):
     if config.sounds != []:
@@ -2375,6 +2423,13 @@ def register_events(row):
 # The Group-value of a row is used for deciding wether
 # two rows are in the same group or not
 def group_value(row, group_painters):
+    if isinstance(group_painters[0], Painter):
+        group_val = []
+        for painter in group_painters:
+            group_val += painter.get_group_value(row)
+        return group_val
+
+    # Legacy implementation without Elements
     group = []
     for p in group_painters:
         groupvalfunc = p[0].get("groupby")
@@ -2724,7 +2779,57 @@ def get_datasource(datasource_name):
 
 
 #.
-#   .--Painters------------------------------------------------------------.
+
+#   .--PainterType---------------------------------------------------------.
+#   |        ____       _       _           _____                          |
+#   |       |  _ \ __ _(_)_ __ | |_ ___ _ _|_   _|   _ _ __   ___          |
+#   |       | |_) / _` | | '_ \| __/ _ \ '__|| || | | | '_ \ / _ \         |
+#   |       |  __/ (_| | | | | | ||  __/ |   | || |_| | |_) |  __/         |
+#   |       |_|   \__,_|_|_| |_|\__\___|_|   |_| \__, | .__/ \___|         |
+#   |                                            |___/|_|                  |
+#   +----------------------------------------------------------------------+
+#   |  A PainterType is a factory for creating painters.                   |
+#   '----------------------------------------------------------------------'
+
+class PainterType(elements.Element):
+    def __init__(self, d):
+        elements.Element.__init__(self, d)
+
+    @classmethod
+    def type_name(self):
+        return "painter_type"
+
+    @classmethod
+    def phrase(self, what):
+        return {
+            "title"          : _("Column"),
+            "title_plural"   : _("Columns"),
+        }[what]
+
+    @classmethod
+    def create_painter_from_spec(self, spec):
+        painter_type_name = spec[0]
+        painter_type = self.instance(painter_type_name)
+        return painter_type.create_painter(spec[1:])
+
+    def create_painter_from_name(self, name):
+        painter_type = self.instance(name)
+        return painter_type.create_painter((None,))
+
+    def create_painter(self, spec):
+        return Painter(self._, spec)
+
+
+elements.register_element_type(PainterType)
+
+# Convert legacy style painters into the new class form
+
+def declare_painter_type(painter_type):
+    PainterType.add_instance(painter_type.name(), painter_type)
+
+#.
+
+#   .--Painter-------------------------------------------------------------.
 #   |                 ____       _       _                                 |
 #   |                |  _ \ __ _(_)_ __ | |_ ___ _ __ ___                  |
 #   |                | |_) / _` | | '_ \| __/ _ \ '__/ __|                 |
@@ -2736,34 +2841,66 @@ def get_datasource(datasource_name):
 #   | table view.                                                          |
 #   '----------------------------------------------------------------------'
 
+# TODO: Subclass PainterWithArgs
+
 class Painter(elements.Element):
-    def __init__(self, d):
+    def __init__(self, d, spec):
+        if "args" in d:
+            raise MKGeneralException("TODO: Implement painter with arguments for %s" % d["name"])
+
         elements.Element.__init__(self, d)
+        self._link_view_name = spec[0]
+        if len(spec) >= 2:
+            self._tooltip_painter = PainterType.create_painter_from_name(spec[1])
+        else:
+            self._tooltip_painter = None
 
     @classmethod
     def type_name(self):
         return "painter"
 
-    @classmethod
-    def phrase(self, what):
-        return {
-            "title"          : _("Column"),
-            "title_plural"   : _("Columns"),
-        }.get(what, elements.Element.phrase(what))
+    def paint(self, row):
+        return self._["paint"](row)
 
     def required_columns(self):
-        return self._["columns"]
+        if self._tooltip_painter:
+            return self._tooltip_painter.required_columns() + self._["columns"]
+        else:
+            return self._["columns"]
 
-elements.register_element_type(Painter)
+    def get_column_header(self):
+        return self._.get("short", self.title())
 
-# Convert legacy style painters into the new class form
+    def get_group_value(self, row):
+        groupvalfunc = self._.get("groupby")
+        if groupvalfunc:
+            return [ groupvalfunc(row), ]
+        else:
+            return [ row[c] for c in self.required_columns() ]
 
-def declare_painter(painter):
-    Painter.add_instance(painter.name(), painter)
+    def get_tdclass_and_content(self, row):
+        # TODO: Join columns must be handled in JoinPainters
+        # row = join_row(row, p)
 
+        tdclass, content = self._["paint"](row)
+        if tdclass == "" and content == "":
+            return tdclass, content
+
+        content = html.utf8_to_entities(content)
+
+        # Create contextlink to other view
+        if content and self._link_view_name:
+            content = link_to_view(content, row, self._link_view_name)
+
+        # Tooltip
+        if content != '' and self._tooltip_painter:
+            cla, tooltip_text = self._tooltip_painter.get_tdclass_and_content(row)
+            content = '<span title="%s">%s</span>' % (tooltip_text, content)
+        return tdclass, content
+        
 
 #.
-#   .--TableViews----------------------------------------------------------.
+#   .--TableView-----------------------------------------------------------.
 #   |          _____     _     _    __     ___                             |
 #   |         |_   _|_ _| |__ | | __\ \   / (_) _____      _____           |
 #   |           | |/ _` | '_ \| |/ _ \ \ / /| |/ _ \ \ /\ / / __|          |
@@ -2777,8 +2914,11 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
     def __init__(self, d):
         elements.Element.__init__(self, d)
         try:
+            self._layout = ViewLayout.instance(self._["layout"])
             self._datasource = Datasource.instance(self._["datasource"])
         except:
+            if d["name"] == "allhosts":
+                raise
             pass
             # TODO: Das hier wieder aktivieren und sicherstellen, dass alle DS da sind.
             # if config.debug:
@@ -2786,7 +2926,7 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
 
     @classmethod
     def type_name(self):
-        return "tableview"
+        return "table_view"
 
     @classmethod
     def phrase(self, what):
@@ -2796,7 +2936,7 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
             "clone"          : _("Clone Table"),
             "create"         : _("Create Table"),
             "edit"           : _("Edit Table"),
-        }.get(what, elements.Element.phrase(what))
+        }[what]
 
     @classmethod
     def ident_attr(self):
@@ -2815,19 +2955,25 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
     def datasource(self):
         return self._datasource
 
+    def layout(self):
+        return self._layout
+
     # Implement API of ContextAware
     def single_infos(self):
         return self._["single_infos"]
 
     # Implement API of ContextAware
     def infos(self):
-        return self._datasource.infos()
+        return self.datasource().infos()
 
-    def painters(self):
-        for painter_spec in self._["painters"]:
-            # TODO: painter_spec[1] geht hier unter: Der Link.
-            # Evtl. gibt es auch noch einen Tooltip, etc.
-            yield Painter.instance(painter_spec[0])
+    def column_painters(self):
+        return self.build_painters_from_specs(self._["painters"])
+
+    def group_painters(self):
+        return self.build_painters_from_specs(self._["group_painters"])
+
+    def build_painters_from_specs(self, painter_specs):
+        return map(PainterType.create_painter_from_spec, painter_specs)
 
     # Return a list of the names of all columns that need to
     # be fetched from the datasource. There are several reasons
@@ -2837,7 +2983,7 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
     # - Filters might need columns for their (non-Livestatus) work
     def required_columns(self):
         columns = set([])
-        for painter in self.painters():
+        for painter in self.column_painters() + self.group_painters():
             columns.update(painter.required_columns())
         # TODO:
         # - Columns of datasource (or should this be implicit?)
@@ -2847,6 +2993,26 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
     # Renders a view in HTML.
     # TODO: Allow specifying a context that comes not from the URL?
     def render_html(self, context, render_options):
+        self.render_html_header(render_options)
+        self.render_html_table(context, render_options)
+        self.render_html_footer(render_options)
+
+    def render_html_header(self, render_options):
+        title = self.title()
+        html.body_start(title, stylesheets=["pages","views","status","bi"])
+        html.top_heading(title)
+
+    def render_html_table(self, context, render_options):
+        columns = sorted(list(self.required_columns()))
+        rows = self.datasource().query(columns, context)
+        layout = self.layout()
+        layout.render(rows, self.column_painters(), self.group_painters(), render_options)
+
+    def render_html_footer(self, render_options):
+        html.bottom_focuscode()
+        html.bottom_footer()
+        html.body_end()
+
 
         # Zum malen der TableView (View) brauchen wir:
         # 1. die View
@@ -2861,12 +3027,10 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
         # - ob checkboxen aktiviert sind
 
 
-
+    def FOO():
         columns = sorted(list(self.required_columns()))
         # TODO: Limit
         rows = self.datasource().query(columns, context)
-        html.debug(("ROWS", rows[0]))
-        html.debug(("RENDER_OPTIONS", render_options))
         return
 
         # TODO: Das do_table_join() muss in die Datasoucre irgendwie rein
@@ -2876,10 +3040,8 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
         # TODO: output_format JSON/CSV/Whatever?
         layout_name = self._["layout"]
         layout = multisite_layouts[layout_name]
-        html.debug(layout)
         # THIS IS JUST A TEST
         ds = multisite_datasources[self._["datasource"]]
-        html.debug(self._["painters"])
         p = [ (multisite_painters[e[0]],) + e[1:] for e in self._["painters"] if e[0] in multisite_painters ]
         display_options = prepare_display_options()
         render_view(self._, rows, ds, [], p,
@@ -2891,14 +3053,26 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
         render_options = self.get_render_options()
         self.render_html(context, render_options)
 
+    # Render options consist of three sections:
+    # - view_options: render options for the view as a whole
+    # - painter_options: how to format certain cells (e.g. timestamps) 
+    # - display_options: HTML header, buttons, footer, etc.
     def get_render_options(self):
         return {
-            # "view_options"    : self.get_view_options(),
+            "view_options"    : self.get_view_options(),
             "painter_options" : self.prepare_painter_options(),
             # "display_options" : self.get_display_options(),
             # "limit"           : self.get_limit(),
             # TODO: checkboxes
             # TODO: layout options
+        }
+
+    def get_view_options(self):
+        return {
+            "num_columns"     : self._["num_columns"],
+            "show_checkboxes" : False,
+            "refresh"         : self._["browser_reload"],
+            "column_headers"  : self._["column_headers"],
         }
 
 
@@ -2931,14 +3105,13 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
     def painter_option_from_url(self, option_name, option):
         vs = option['valuespec']
         var_prefix = 'po_' + option_name
-        html.debug(html.var(var_prefix))
         return vs.from_html_vars(var_prefix)
 
     def get_painter_options_from_file(self):
         options_for_all_views = config.load_user_file("viewoptions", {})
         view_options = options_for_all_views.get(self.name(), {})
         painter_options = dict([
-            (k,v) 
+            (k,v)
             for (k,v) in view_options.items()
             if k in multisite_painter_options])
         return painter_options
@@ -2949,7 +3122,6 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
         defaults = self.get_painter_options_defaults()
         changed = False
         for opt_name, default_value in defaults.items():
-            html.debug(opt_name)
             if options[opt_name] != default_value:
                 view_options[opt_name] = options[opt_name]
                 changed = True
@@ -3054,3 +3226,44 @@ elements.register_element_type(TableView)
 
 # Wird entfernt
 # page_edit_view() -> try_handler   show_view(view, False, False, True)
+
+
+#.
+#   .--ViewLayouts---------------------------------------------------------.
+#   |   __     ___               _                            _            |
+#   |   \ \   / (_) _____      _| |    __ _ _   _  ___  _   _| |_ ___      |
+#   |    \ \ / /| |/ _ \ \ /\ / / |   / _` | | | |/ _ \| | | | __/ __|     |
+#   |     \ V / | |  __/\ V  V /| |__| (_| | |_| | (_) | |_| | |_\__ \     |
+#   |      \_/  |_|\___| \_/\_/ |_____\__,_|\__, |\___/ \__,_|\__|___/     |
+#   |                                       |___/                          |
+#   +----------------------------------------------------------------------+
+#   |  A view layout is a way to render tabular data, e.g. as table, as    |
+#   |  matrix, as collection of tiles, etc.                                |
+#   '----------------------------------------------------------------------'
+
+class ViewLayout(elements.Element):
+    def __init__(self, d):
+        elements.Element.__init__(self, d)
+
+    @classmethod
+    def type_name(self):
+        return "view_layout"
+
+    @classmethod
+    def phrase(self, what):
+        return {
+            "title"        : _("Table View Layout"),
+            "title_plural" : _("Table View Layouts"),
+        }
+
+    def render(self, rows, column_painters, group_painters, render_options):
+        # TODO: We wrap to the legacy interface of the layouts. We need to
+        # cleanup those.
+        view_options = render_options["view_options"]
+        self._["render"](rows, view_options, group_painters, column_painters, 
+                         view_options["num_columns"], view_options["show_checkboxes"])
+
+def register_view_layout(name, d):
+    d["name"] = name
+    view_layout = ViewLayout(d)
+    ViewLayout.add_instance(name, view_layout)

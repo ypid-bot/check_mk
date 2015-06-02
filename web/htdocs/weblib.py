@@ -28,6 +28,8 @@ import config
 import lib
 import re
 
+# TODO: strange name for a module that consists 90% of row selector.
+
 def ajax_tree_openclose():
     html.load_tree_states()
 

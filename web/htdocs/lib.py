@@ -95,7 +95,7 @@ class MKInternalError(MKException):
 # mandatory member functions are defined.
 def mandatory(func):
     def stub(*args, **kwargs):
-        raise MKInternalError(_("Missing implementation of function. arguments: %r, keyword arguments: %r") % (args, kwargsS))
+        raise MKInternalError(_("Missing implementation of function. arguments: %r, keyword arguments: %r") % (args, kwargs))
     return stub
 
 # A decorator that logs the call of a function
