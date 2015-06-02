@@ -34,7 +34,7 @@ except ImportError:
 from lib import *
 from valuespec import *
 import config, table
-from elements import *# That will replace visuals.py one day
+from elements import * # That will replace visuals.py one day
 
 #   .--Plugins-------------------------------------------------------------.
 #   |                   ____  _             _                              |
@@ -1375,7 +1375,7 @@ def transform_old_visual(visual):
 # TODO: Remove this code as soon as everything is moved over to elements.py
 def ajax_popup_add():
     html.write("<ul>")
-    elements.render_addto_popup()
+    render_addto_popup()
 
     for visual_type_name, visual_type in visual_types.items():
         if "popup_add_handler" in visual_type:

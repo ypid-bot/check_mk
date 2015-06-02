@@ -2485,17 +2485,17 @@ function add_to_visual(visual_type, visual_name)
         window.location.href = response;
 }
 
-function pagetype_add_to_container(page_type, page_name)
+function add_element_to_container(container_type, container_name)
 {
     var element_type = popup_data[0]; // e.g. 'graph'
-    var create_info  = popup_data[1]; // complex JSON struct describing the thing
+    var create_info = popup_data[1]; // complex JSON struct describing the thing
     var create_info_json = JSON.stringify(create_info);
 
     close_popup();
 
-    response = get_url_sync('ajax_pagetype_add_element.py'
-                           + '?page_type=' + page_type
-                           + '&page_name=' + page_name
+    response = get_url_sync('ajax_add_element_to_container.py'
+                           + '?container_type=' + container_type
+                           + '&container_name=' + container_name
                            + '&element_type=' + element_type
                            + '&create_info='  + encodeURIComponent(create_info_json));
     popup_data = null;

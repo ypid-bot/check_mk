@@ -2931,11 +2931,11 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
     @classmethod
     def phrase(self, what):
         return {
-            "title"          : _("Table"),
-            "title_plural"   : _("Tables"),
-            "clone"          : _("Clone Table"),
-            "create"         : _("Create Table"),
-            "edit"           : _("Edit Table"),
+            "title"          : _("Table View"),
+            "title_plural"   : _("Table Views"),
+            "clone"          : _("Clone Table View"),
+            "create"         : _("Create Table View"),
+            "edit"           : _("Edit Table View"),
         }[what]
 
     @classmethod
@@ -2992,8 +2992,10 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
 
     # Renders a view in HTML.
     # TODO: Allow specifying a context that comes not from the URL?
-    def render_html(self, context, render_options):
+    # TODO: Warum ist dieser Code eigentlich nicht in page renderer???
+    def render_html_page(self, context, render_options):
         self.render_html_header(render_options)
+        self.render_buttons(render_options)
         self.render_html_table(context, render_options)
         self.render_html_footer(render_options)
 
@@ -3001,6 +3003,15 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
         title = self.title()
         html.body_start(title, stylesheets=["pages","views","status","bi"])
         html.top_heading(title)
+
+    def render_buttons(self, render_options):
+        execute_hooks('buttons-begin')
+        html.begin_context_buttons()
+        html.debug("AJ")
+        elements.Overridable.render_buttons(self)
+        html.debug("NEIN")
+        html.end_context_buttons()
+        execute_hooks('buttons-end')
 
     def render_html_table(self, context, render_options):
         columns = sorted(list(self.required_columns()))
@@ -3014,44 +3025,11 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
         html.body_end()
 
 
-        # Zum malen der TableView (View) brauchen wir:
-        # 1. die View
-        # 2. den Context
-        # 3. die render_options. Diese bestehen aus:
-        # - display_options
-        # - display_options for links??
-        # - view_options (num_columns, etc.)
-        # - painter_options (Zeitformat)
-        # - aktuelles Limit
-        # - layout_options (gibt es noch nicht)
-        # - ob checkboxen aktiviert sind
-
-
-    def FOO():
-        columns = sorted(list(self.required_columns()))
-        # TODO: Limit
-        rows = self.datasource().query(columns, context)
-        return
-
-        # TODO: Das do_table_join() muss in die Datasoucre irgendwie rein
-        # TODO: auch das need_inventory_data muss vorher schon gelaufen sein.
-        #       Das muss der Selektor abonnieren. Und die datasources, die
-        #       eine Host-Spalte haben, müssen diese dann magisch hinzufügen.
-        # TODO: output_format JSON/CSV/Whatever?
-        layout_name = self._["layout"]
-        layout = multisite_layouts[layout_name]
-        # THIS IS JUST A TEST
-        ds = multisite_datasources[self._["datasource"]]
-        p = [ (multisite_painters[e[0]],) + e[1:] for e in self._["painters"] if e[0] in multisite_painters ]
-        display_options = prepare_display_options()
-        render_view(self._, rows, ds, [], p,
-                    display_options, {}, True, True, True, layout, 3, True, True, 50)
-
     # Overridden from PageRenderer
     def render(self):
         context = self.build_inner_context(self.get_context_from_url())
         render_options = self.get_render_options()
-        self.render_html(context, render_options)
+        self.render_html_page(context, render_options)
 
     # Render options consist of three sections:
     # - view_options: render options for the view as a whole
@@ -3139,61 +3117,62 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
         return config.may("general.painter_options")
 
 
-    # We should rename this into "painter_options". Also the saved file.
-    # TODO: Move this to be a member function of TableView
-    def view_options(viewname):
-        # Options are stored per view. Get all options for all views
-        vo = config.load_user_file("viewoptions", {})
+    #### # We should rename this into "painter_options". Also the saved file.
+    #### # TODO: Move this to be a member function of TableView
+    #### def XXX_view_options(viewname):
+    ####     # Options are stored per view. Get all options for all views
+    ####     vo = config.load_user_file("viewoptions", {})
 
-        # Now get options for the view in question
-        v = vo.get(viewname, {})
-        must_save = False
+    ####     # Now get options for the view in question
+    ####     v = vo.get(viewname, {})
+    ####     must_save = False
 
-        # Now override the loaded options with new option settings that are
-        # provided by the URL. Our problem: we do not know the URL variables
-        # that a valuespec expects. But we know the common prefix of all
-        # variables for each option.
-        if config.may("general.painter_options"):
-            for option_name, opt in multisite_painter_options.items():
-                have_old_value = option_name in v
-                if have_old_value:
-                    old_value = v.get(option_name)
+    ####     # Now override the loaded options with new option settings that are
+    ####     # provided by the URL. Our problem: we do not know the URL variables
+    ####     # that a valuespec expects. But we know the common prefix of all
+    ####     # variables for each option.
+    ####     if config.may("general.painter_options"):
+    ####         for option_name, opt in multisite_painter_options.items():
+    ####             have_old_value = option_name in v
+    ####             if have_old_value:
+    ####                 old_value = v.get(option_name)
 
-                # Are there settings for this painter option present?
-                var_prefix = 'po_' + option_name
-                if html.has_var_prefix(var_prefix):
+    ####             # Are there settings for this painter option present?
+    ####             var_prefix = 'po_' + option_name
+    ####             if html.has_var_prefix(var_prefix):
 
-                    # Get new value for the option from the value spec
-                    vs = opt['valuespec']
-                    value = vs.from_html_vars(var_prefix)
+    ####                 # Get new value for the option from the value spec
+    ####                 vs = opt['valuespec']
+    ####                 value = vs.from_html_vars(var_prefix)
 
-                    v[option_name] = value
-                    opt['value'] = value # make globally present for painters
+    ####                 v[option_name] = value
+    ####                 opt['value'] = value # make globally present for painters
 
-                    if not have_old_value or v[option_name] != old_value:
-                        must_save = True
+    ####                 if not have_old_value or v[option_name] != old_value:
+    ####                     must_save = True
 
-                elif have_old_value:
-                    opt['value'] = old_value # make globally present for painters
-                elif 'value' in opt:
-                    del opt['value']
+    ####             elif have_old_value:
+    ####                 opt['value'] = old_value # make globally present for painters
+    ####             elif 'value' in opt:
+    ####                 del opt['value']
 
-        # If the user has no permission for changing painter options
-        # (or has *lost* his permission) then we need to remove all
-        # of the options. But we do not save.
-        else:
-            for on, opt in multisite_painter_options.items():
-                if on in v:
-                    del v[on]
-                    must_save = True
-                if 'value' in opt:
-                    del opt['value']
+    ####    # If the user has no permission for changing painter options
+    ####    # (or has *lost* his permission) then we need to remove all
+    ####    # of the options. But we do not save.
+    ####    else:
+    ####        for on, opt in multisite_painter_options.items():
+    ####            if on in v:
+    ####                del v[on]
+    ####                must_save = True
+    ####            if 'value' in opt:
+    ####                del opt['value']
 
-        if must_save:
-            vo[viewname] = v
-            config.save_user_file("viewoptions", vo)
+    ####    if must_save:
+    ####        vo[viewname] = v
+    ####        config.save_user_file("viewoptions", vo)
 
-        return v
+    ####    return v
+
     # TODO: only_count. Das mache ich komplett ohne den ganzen show_view()
     # mist.  Das macht einfach die Datasource. Wir brauchen nur den Kontext und
     # die Datasource und die muss in der Lage sein, die Anzahl zu ermitteln
@@ -3267,3 +3246,34 @@ def register_view_layout(name, d):
     d["name"] = name
     view_layout = ViewLayout(d)
     ViewLayout.add_instance(name, view_layout)
+
+
+#.
+#   .--TODO----------------------------------------------------------------.
+#   |                       _____ ___  ____   ___                          |
+#   |                      |_   _/ _ \|  _ \ / _ \                         |
+#   |                        | || | | | | | | | | |                        |
+#   |                        | || |_| | |_| | |_| |                        |
+#   |                        |_| \___/|____/ \___/                         |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   | Kommentarsektion, was noch alles fehlt                               |
+#   '----------------------------------------------------------------------'
+
+# - Sortieren von Spalten
+# - Kontextbuttons zu anderen Views
+# - Buttons wie Edit
+# - Links in Zellen
+# - Limit
+# - Kommandos
+# - Selektoren
+# - Dass alle Layouts gehen
+# - Dass alle Views gehen
+# - Dass alle Datasources gehen
+# - Join Columns
+# - Column Tooltips
+# - Painter options anzeigen
+# - Checkboxen
+# - Inventory-Daten mit Filtern und Columns
+# - display_options müssen wieder wirken
+# ...

@@ -55,7 +55,7 @@ def register_element_type(element_type):
 def element_type(element_type_name):
     return element_types[element_type_name]
 
-def has_element(element_type_name):
+def has_element_type(element_type_name):
     return element_type_name in element_types
 
 
@@ -70,17 +70,17 @@ def page_handlers():
             page_handlers.update(element_type.page_handlers())
 
     # Ajax handler for adding elements to a container
-    # TODO: Shouldn't we move that declaration into the class?
-    page_handlers["ajax_pagetype_add_element"] = lambda: Container.ajax_add_element()
+    # TODO: Shouldn't we move that declaration into the class? Yes!
+    page_handlers["ajax_add_element_to_container"] = lambda: Container.ajax_add_element_to_container()
     return page_handlers
 
 
 def render_addto_popup():
-    for element in elements.values():
+    for element_type in element_types.values():
         # TODO: Wie sorgen wir dafür, dass nur geeignete Elemente zum hinzufügen
         # angeboten werden? Eine View in eine GraphCollection macht keinen Sinn...
-        if issubclass(element, Container):
-            element.render_addto_popup()
+        if issubclass(element_type, Container):
+            element_type.render_addto_popup()
 
 
 #.
@@ -110,6 +110,10 @@ class Element:
             if "sanitize" in clazz.__dict__:
                 clazz.sanitize(d)
 
+    @classmethod
+    def type_name(self):
+        return "element"
+
     def internal_representation(self):
         return self._
 
@@ -133,8 +137,9 @@ class Element:
     # "add_to"       : Text like "Add to foo bar..."
     # TODO: Look at GraphCollection for the complete list of phrases to
     # be defined for each page type and explain that here.
-    # def phrase(self, phrase):
-    #   return "%s: %s" % (phrase, self.type_name())
+    @classmethod
+    def phrase(self, phrase):
+        return "%s: %s" % (phrase, self.type_name())
 
     # You can override this if you class needs any permissions to
     # be declared. Note: currently only *one* of the classes in the
@@ -218,25 +223,6 @@ class Element:
     def description(self):
         return self._.get("description", "")
 
-    # Default values for the creation dialog can be overridden by the
-    # sub class.
-    # TODO: Shouldn't this go to Overridable?
-    @classmethod
-    def default_name(self):
-        stem = self.type_name()
-        nr = 1
-        while True:
-            name = "%s_%d" % (stem, nr)
-            conflict = False
-            for instance in self.__instances.values():
-                if instance.name() == name:
-                    conflict = True
-                    break
-            if not conflict:
-                return name
-            else:
-                nr += 1
-
     @classmethod
     def default_topic(self):
         return _("Other")
@@ -291,16 +277,13 @@ class Element:
     @classmethod
     # TODO: Warum ist das in Element? Wegen Probleme der Mehrfachvererbung...
     def pages(self):
-        for instance in self.instances_dict().values():
-            return instance
+        return self.instances()
 
-
-    # Stub function for finding a page by name. Overriden by
-    # Overridable.
+    # Stub function for finding a page by name. Overriden by Overridable.
     # TODO: Warum ist das in Element?
     @classmethod
     def find_page(self, name):
-        for instance in self.__instances.values():
+        for instance in self.instances():
             if instance.name() == name:
                 return instance
 
@@ -495,6 +478,24 @@ class Overridable:
             add_vars.append(('_owner', self.owner()))
         return html.makeactionuri(add_vars)
 
+    # Default value for the creation dialog can be overridden by the
+    # sub class.
+    @classmethod
+    def default_name(self):
+        stem = self.type_name()
+        nr = 1
+        while True:
+            name = "%s_%d" % (stem, nr)
+            conflict = False
+            for instance in self.instances():
+                if instance.name() == name:
+                    conflict = True
+                    break
+            if not conflict:
+                return name
+            else:
+                nr += 1
+
     @classmethod
     def create_url(self):
         return "edit_%s.py?mode=create" % self.type_name()
@@ -504,12 +505,17 @@ class Overridable:
         return "%ss.py" % self.type_name()
 
     @classmethod
-    def context_button_list(self):
+    def render_list_button(self):
         html.context_button(self.phrase("title_plural"), self.list_url(), self.type_name())
 
-    def context_button_edit(self):
+    def render_edit_button(self):
+        # TODO: Who checks the permissions??
         html.context_button(_("Edit"), self.edit_url(), "edit")
 
+    def render_buttons(self):
+        # TODO: Who checks the permissions??
+        self.render_list_button()
+        self.render_edit_button()
 
     @classmethod
     def declare_permissions(self):
@@ -548,7 +554,6 @@ class Overridable:
         if not self.has_overriding_permission(how):
             raise MKAuthException(_("Sorry, you lack the permission. Operation: %s, table: %s") % (
                                     how, self.phrase("title_plural")))
-
 
     # Return all pages visible to the user, implements shadowing etc.
     @classmethod
@@ -1025,7 +1030,7 @@ class Container:
             html.write('<li><span>%s:</span></li>' % self.phrase("add_to"))
             for page in pages:
                 html.write('<li><a href="javascript:void(0)" '
-                           'onclick="pagetype_add_to_container(\'%s\', \'%s\'); reload_sidebar();"><img src="images/icon_%s.png"> %s</a></li>' %
+                           'onclick="add_element_to_container(\'%s\', \'%s\'); reload_sidebar();"><img src="images/icon_%s.png"> %s</a></li>' %
                            (self.type_name(), page.name(), self.type_name(), page.title()))
 
 
@@ -1035,33 +1040,32 @@ class Container:
     # not with any actual subclass like GraphCollection. We need to find that
     # class by the URL variable element.
     @classmethod
-    def ajax_add_element(self):
-        element_name = html.var("element")
-        page_name      = html.var("page_name")
-        element_type   = html.var("element_type")
-        create_info    = json.loads(html.var("create_info"))
+    def ajax_add_element_to_container(self):
+        container_type_name = html.var("container_type")
+        container_name      = html.var("container_name")
+        element_type_name   = html.var("element_type")
+        create_info         = json.loads(html.var("create_info"))
 
-        element = elements[element_name]
-        target_page, need_sidebar_reload = element.add_element_via_popup(page_name, element_type, create_info)
-        if target_page:
-            # Redirect user to that page
+        container_type = element_types[container_type_name]
+
+        target_page_url, need_sidebar_reload = container_type.add_element_to_container(container_name, element_type_name, create_info)
+        if target_page_url:
             html.write(target_page.page_url())
         html.write("\n%s" % (need_sidebar_reload and "true" or "false"))
 
 
     # Default implementation for generic containers - used e.g. by GraphCollection
     @classmethod
-    def add_element_via_popup(self, page_name, element_type, create_info):
+    def add_element_to_container(self, container_name, element_type_name, create_info):
         self.need_overriding_permission("edit")
-
         need_sidebar_reload = False
-        page = self.find_page(page_name)
-        if not page.is_mine():
-            page = page.clone()
-            if isinstance(page, PageRenderer) and not page.is_hidden():
+        container = self.find_page(container_name)
+        if not container.is_mine():
+            container = container.clone()
+            if isinstance(container, PageRenderer) and not container.is_hidden():
                 need_sidebar_reload = True
 
-        page.add_element(create_info) # can be overridden
+        container.add_element(create_info) # can be overridden
         self.save_user_instances()
         return None, need_sidebar_reload
         # With a redirect directly to the page afterwards do it like this:
@@ -1101,7 +1105,7 @@ class Info(Element):
         return {
             "title"          : _("Info"),
             "title_plural"   : _("Infos"), # TODO: Present the user a better name for this
-        }.get(what, elements.Element.phrase(what))
+        }.get(what, Element.phrase(what))
 
 
 register_element_type(Info)
@@ -1165,7 +1169,7 @@ class Selector(Element):
         return {
             "title"          : _("Selector"),
             "title_plural"   : _("Selectors"),
-        }.get(what, elements.Element.phrase(what))
+        }.get(what, Element.phrase(what))
 
     def info(self):
         return self._["info"]
@@ -1279,7 +1283,6 @@ class Context(Element):
         headers = ""
         for selector_name, selector_context in self._.items():
             if not Selector.has_instance(selector_name):
-                # TODO: html.debug("%s gibts noch nicht. Ignoriere das..." % selector_name)
                 pass
             else:
                 selector = Selector.instance(selector_name)
@@ -1290,7 +1293,6 @@ class Context(Element):
     def select_rows(self, rows, context):
         for selector_name, selector_context in self._.items():
             if not Selector.has_instance(selector_name):
-                # TODO: html.debug("%s gibts noch nicht. Ignoriere das..." % selector_name)
                 pass
             else:
                 selector = Selector.instance(selector_name)
