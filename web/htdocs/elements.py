@@ -114,6 +114,10 @@ class Element:
     def type_name(self):
         return "element"
 
+    @classmethod
+    def type_icon(self):
+        return self.type_name()
+
     def internal_representation(self):
         return self._
 
@@ -506,16 +510,23 @@ class Overridable:
 
     @classmethod
     def render_list_button(self):
-        html.context_button(self.phrase("title_plural"), self.list_url(), self.type_name())
+        html.context_button(self.phrase("title_plural"), self.list_url(), self.type_icon())
 
     def render_edit_button(self):
         # TODO: Who checks the permissions??
         html.context_button(_("Edit"), self.edit_url(), "edit")
 
-    def render_buttons(self):
+    def render_edit_buttons(self):
         # TODO: Who checks the permissions??
         self.render_list_button()
         self.render_edit_button()
+
+    def render_live_buttons(self):
+        if self.is_mine():
+            html.header_button(self.phrase("edit"), self.edit_url(), "edit")
+        else:
+            html.header_button(self.phrase("clone"), self.clone_url(), "clone")
+
 
     @classmethod
     def declare_permissions(self):

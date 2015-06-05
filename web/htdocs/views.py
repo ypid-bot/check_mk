@@ -2179,6 +2179,7 @@ def prepare_paint(p, row):
     return tdclass, content
 
 def url_to_view(row, view_name):
+    # TODO: Das hier wird schon in link_to_view geprüft.
     if 'I' not in html.display_options:
         return None
 
@@ -2227,7 +2228,7 @@ def link_to_view(content, row, view_name):
         if 'I' not in html.display_options:
             return content
     except:
-        # New implementation has now html.display_options
+        # New implementation has no html.display_options
         return content
 
     url = url_to_view(row, view_name)
@@ -2779,7 +2780,6 @@ def get_datasource(datasource_name):
 
 
 #.
-
 #   .--PainterType---------------------------------------------------------.
 #   |        ____       _       _           _____                          |
 #   |       |  _ \ __ _(_)_ __ | |_ ___ _ _|_   _|   _ _ __   ___          |
@@ -2788,7 +2788,10 @@ def get_datasource(datasource_name):
 #   |       |_|   \__,_|_|_| |_|\__\___|_|   |_| \__, | .__/ \___|         |
 #   |                                            |___/|_|                  |
 #   +----------------------------------------------------------------------+
-#   |  A PainterType is a factory for creating painters.                   |
+#   |  A PainterType is a factory for creating painters. Painter types are |
+#   |  being declared when the plugins are loaded. When a table view is    |
+#   |  being rendered painter types are used to create the actual painters.|
+#   |  In most cases each column corresponds to one specific painter type. |
 #   '----------------------------------------------------------------------'
 
 class PainterType(elements.Element):
@@ -2828,7 +2831,6 @@ def declare_painter_type(painter_type):
     PainterType.add_instance(painter_type.name(), painter_type)
 
 #.
-
 #   .--Painter-------------------------------------------------------------.
 #   |                 ____       _       _                                 |
 #   |                |  _ \ __ _(_)_ __ | |_ ___ _ __ ___                  |
@@ -2897,7 +2899,7 @@ class Painter(elements.Element):
             cla, tooltip_text = self._tooltip_painter.get_tdclass_and_content(row)
             content = '<span title="%s">%s</span>' % (tooltip_text, content)
         return tdclass, content
-        
+
 
 #.
 #   .--TableView-----------------------------------------------------------.
@@ -2933,9 +2935,9 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
         return {
             "title"          : _("Table View"),
             "title_plural"   : _("Table Views"),
-            "clone"          : _("Clone Table View"),
+            "clone"          : _("Clone this Table View"),
             "create"         : _("Create Table View"),
-            "edit"           : _("Edit Table View"),
+            "edit"           : _("Edit this Table View"),
         }[what]
 
     @classmethod
@@ -3005,13 +3007,9 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
         html.top_heading(title)
 
     def render_buttons(self, render_options):
-        execute_hooks('buttons-begin')
-        html.begin_context_buttons()
-        html.debug("AJ")
-        elements.Overridable.render_buttons(self)
-        html.debug("NEIN")
-        html.end_context_buttons()
-        execute_hooks('buttons-end')
+        html.begin_header_buttons()
+        elements.Overridable.render_live_buttons(self)
+        html.end_header_buttons()
 
     def render_html_table(self, context, render_options):
         columns = sorted(list(self.required_columns()))
@@ -3033,7 +3031,7 @@ class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAwa
 
     # Render options consist of three sections:
     # - view_options: render options for the view as a whole
-    # - painter_options: how to format certain cells (e.g. timestamps) 
+    # - painter_options: how to format certain cells (e.g. timestamps)
     # - display_options: HTML header, buttons, footer, etc.
     def get_render_options(self):
         return {
@@ -3239,7 +3237,7 @@ class ViewLayout(elements.Element):
         # TODO: We wrap to the legacy interface of the layouts. We need to
         # cleanup those.
         view_options = render_options["view_options"]
-        self._["render"](rows, view_options, group_painters, column_painters, 
+        self._["render"](rows, view_options, group_painters, column_painters,
                          view_options["num_columns"], view_options["show_checkboxes"])
 
 def register_view_layout(name, d):
@@ -3262,7 +3260,7 @@ def register_view_layout(name, d):
 
 # - Sortieren von Spalten
 # - Kontextbuttons zu anderen Views
-# - Buttons wie Edit
+# - Buttons Export as PDF, CSV und so Zeug
 # - Links in Zellen
 # - Limit
 # - Kommandos

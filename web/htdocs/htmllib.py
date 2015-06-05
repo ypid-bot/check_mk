@@ -433,6 +433,15 @@ class html:
         self.write("<input type=button name=%s id=%s onclick=\"%s\" "
                    "class=button%s value=\"%s\" />" % (varname, varname, onclick, style, text))
 
+    def begin_header_buttons(self):
+        self.write("<div class=headerbuttons>\n")
+
+    def end_header_buttons(self):
+        self.write("</div>\n")
+
+    def header_button(self, title, url, icon):
+        self.icon_button(url, title, icon)
+        
     def begin_context_buttons(self):
         if not self.context_buttons_open:
             self.context_button_hidden = False
