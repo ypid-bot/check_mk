@@ -2819,6 +2819,7 @@ class PainterType(elements.Element):
         painter_type = self.instance(painter_type_name)
         return painter_type.create_painter(spec[1:])
 
+    @classmethod
     def create_painter_from_name(self, name):
         painter_type = self.instance(name)
         return painter_type.create_painter((None,))
@@ -2958,6 +2959,7 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
     def sanitize(self, d):
         transform_old_view(d)
         d.setdefault("num_columns", 1)
+        d.setdefault("browser_reload", None)
         # d.setdefault("single_infos", [])
         # TODO: Hier das umstellen von alten Viewdefinitionen auf neue
 
@@ -3009,6 +3011,7 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
     def render_html_page(self, context, render_options):
         self.render_html_header(context, render_options)
         self.render_buttons(render_options)
+        self.render_page_links(context, render_options)
         self.render_html_table(context, render_options)
         self.render_html_footer(render_options)
 

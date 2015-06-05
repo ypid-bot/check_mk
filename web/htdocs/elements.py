@@ -872,6 +872,9 @@ class ContextAware(Element):
     def get_intrinsic_context(self):
         return Context(self.infos(), self.single_infos(), self._.get("context", {}))
 
+    def unsatisfied_single_infos(self):
+        return self.get_intrinsic_context().unsatisfied_single_infos()
+
     # Construct a context from current URL variables. This takes infos and
     # single infos into account.
     # TODO: Should this be moved to ContextProvider?
@@ -954,8 +957,6 @@ class PageRenderer:
     @classmethod
     def global_page_links_by_topic(self):
         by_topic = {}
-
-        links = []
         for element_type in all_element_types_implementing(PageRenderer):
             for topic, title, url in  element_type.global_page_links():
                 by_topic.setdefault(topic, []).append((title, url))
@@ -1079,6 +1080,53 @@ class ContextAwarePageRenderer(ContextAware, PageRenderer):
     def get_url_for_context(self, context):
         return self.page_url(context.as_url_variables())
 
+    def context_page_links_by_topic(self, context):
+        by_topic = {}
+        for element_type in all_element_types_implementing(ContextAwarePageRenderer):
+            for topic, title, url in element_type.context_page_links(context):
+                if url != self.page_url():
+                    by_topic.setdefault(topic, []).append((title, url))
+        return self.sort_by_topic(by_topic.items())
+
+    @classmethod
+    def context_page_links(self, context):
+        single_info_context = context.get_single_info_context()
+        links = []
+        for page in self.pages():
+            if page.relevant_for_context(single_info_context):
+                links.append((page.topic(), page.title(), page.get_url_for_context(single_info_context)))
+        return links
+
+    def render_page_links(self, context, render_options):
+        for topic, links in self.context_page_links_by_topic(context):
+            self.render_page_link_topic(topic, links)
+
+    def render_page_link_topic(self, topic, links):
+        html.write("<h3>%s</h3>" % topic)
+        html.write("<ul>")
+        # TODO: Icon for each URL
+        for title, url in links:
+            html.write('<li><a href="%s">%s</a></li>' % (url, title))
+        html.write("</ul>")
+
+    def relevant_for_context(self, context):
+        if self.do_not_context_link():
+            return False
+
+        unsatisfied = self.unsatisfied_single_infos()
+        if not unsatisfied:
+            return False # global page has no context
+
+        for info_name in unsatisfied:
+            if info_name not in context.single_infos():
+                return False # wrong context siganture
+            if info_name not in context:
+                return False # object name not provided
+
+        return True
+
+    def do_not_context_link(self):
+        return bool(self._.get("hidebutton"))
 
 
 #.
@@ -1374,6 +1422,20 @@ class Context(Element):
 
     def single_infos(self):
         return self._single_infos
+
+    def unsatisfied_single_infos(self):
+        return [
+            info_name
+            for info_name in self._single_infos
+            if info_name not in self._
+        ]
+
+    def get_single_info_context(self):
+        new_dict = {}
+        for info_name in self._single_infos:
+            if info_name in self._:
+                new_dict[info_name] = self._[info_name]
+        return Context(self.infos(), self.single_infos(), new_dict)
 
     # Much like a dict update, but we make sure that the original
     # dict (which we might have borrowed from somewhere) is not
