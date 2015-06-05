@@ -214,6 +214,8 @@ multisite_layouts["boxed"] = {
     "checkboxes" : True,
 }
 
+register_view_layout("boxed", multisite_layouts["boxed"])
+
 
 #.
 #   .--Tiled---------------------------------------------------------------.

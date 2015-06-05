@@ -2228,7 +2228,7 @@ def link_to_view(content, row, view_name):
         if 'I' not in html.display_options:
             return content
     except:
-        # New implementation has no html.display_options
+        # TODO: clean this up. Move into views class
         return content
 
     url = url_to_view(row, view_name)
@@ -2706,9 +2706,16 @@ class Datasource(elements.Element):
     def do_query(self, columns, context, limit=None):
         pass
 
+    # Create a context from the information of a row queried from our data
+    # source. We e.g. need this for creating links to other table views in
+    # the cells of table views.
+    def context_from_row(self, row, single_infos):
+        html.debug(single_infos)
+        return {}
 
-    # TODO: Eine Datasource muss wissen, welche Spalten überhaupt da sind? War bisher
-    # aber auch nicht der Fall.
+
+
+
 
 elements.register_element_type(Datasource)
 
@@ -2892,7 +2899,8 @@ class Painter(elements.Element):
 
         # Create contextlink to other view
         if content and self._link_view_name:
-            content = link_to_view(content, row, self._link_view_name)
+            url = TableView.get_url_to_page_for_row("table_view", self._link_view_name, row)
+            content = '<a href="%s">%s</a>' % (url, content)
 
         # Tooltip
         if content != '' and self._tooltip_painter:
@@ -2912,14 +2920,14 @@ class Painter(elements.Element):
 #   +----------------------------------------------------------------------+
 #   |  Tables aree that what was formerly known as "View".                 |
 #   '----------------------------------------------------------------------'
-class TableView(elements.PageRenderer, elements.Overridable, elements.ContextAware, elements.Element):
+class TableView(elements.ContextAwarePageRenderer, elements.Overridable, elements.Element):
     def __init__(self, d):
         elements.Element.__init__(self, d)
         try:
             self._layout = ViewLayout.instance(self._["layout"])
             self._datasource = Datasource.instance(self._["datasource"])
         except:
-            if d["name"] == "allhosts":
+            if d["name"] in ["host", "allhosts"]:
                 raise
             pass
             # TODO: Das hier wieder aktivieren und sicherstellen, dass alle DS da sind.
@@ -3261,7 +3269,6 @@ def register_view_layout(name, d):
 # - Sortieren von Spalten
 # - Kontextbuttons zu anderen Views
 # - Buttons Export as PDF, CSV und so Zeug
-# - Links in Zellen
 # - Limit
 # - Kommandos
 # - Selektoren
@@ -3274,4 +3281,5 @@ def register_view_layout(name, d):
 # - Checkboxen
 # - Inventory-Daten mit Filtern und Columns
 # - display_options müssen wieder wirken
+# - Site hint
 # ...

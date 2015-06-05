@@ -58,6 +58,10 @@ def element_type(element_type_name):
 def has_element_type(element_type_name):
     return element_type_name in element_types
 
+def get_element_by_type_and_name(element_type_name, element_name):
+    et = element_type(element_type_name)
+    return et.get_element_by_name(element_name)
+
 
 # Global module functions for the integration into the rest of the code
 
@@ -244,6 +248,10 @@ class Element:
         return self.__instances.setdefault(self.type_name, {})
 
     @classmethod
+    def instances(self):
+        return self.instances_dict().values()
+
+    @classmethod
     def clear_instances(self):
         self.instances_dict().clear()
 
@@ -254,10 +262,6 @@ class Element:
     @classmethod
     def remove_instance(self, key):
         del self.instances_dict()[key]
-
-    @classmethod
-    def instances(self):
-        return self.instances_dict().values()
 
     @classmethod
     def has_instance(self, key):
@@ -274,113 +278,6 @@ class Element:
         instances = self.instances_dict().values()
         instances.sort(cmp = lambda a,b: cmp(a.title(), b.title()))
         return instances
-
-    # Stub function for the list of all pages. In case of Overridable
-    # several instances might exist that overlay each other. This
-    # function returns the final list of pages visible to the user
-    @classmethod
-    # TODO: Warum ist das in Element? Wegen Probleme der Mehrfachvererbung...
-    def pages(self):
-        return self.instances()
-
-    # Stub function for finding a page by name. Overriden by Overridable.
-    # TODO: Warum ist das in Element?
-    @classmethod
-    def find_page(self, name):
-        for instance in self.instances():
-            if instance.name() == name:
-                return instance
-
-
-#.
-#   .--PageRenderer--------------------------------------------------------.
-#   |   ____                  ____                _                        |
-#   |  |  _ \ __ _  __ _  ___|  _ \ ___ _ __   __| | ___ _ __ ___ _ __     |
-#   |  | |_) / _` |/ _` |/ _ \ |_) / _ \ '_ \ / _` |/ _ \ '__/ _ \ '__|    |
-#   |  |  __/ (_| | (_| |  __/  _ <  __/ | | | (_| |  __/ | |  __/ |       |
-#   |  |_|   \__,_|\__, |\___|_| \_\___|_| |_|\__,_|\___|_|  \___|_|       |
-#   |              |___/                                                   |
-#   +----------------------------------------------------------------------+
-#   |  Base class for all things that have an URL and can be rendered as   |
-#   |  an HTML page. And that can be added to the sidebar snapin of all    |
-#   |  pages.
-#   '----------------------------------------------------------------------'
-
-class PageRenderer:
-    # Stuff to be overridden by the implementation of actual page types
-
-    # TODO: Das von graphs.py rauspfluecken. Also alles, was man
-    # überladen muss oder kann.
-
-    # Attribute for identifying that page when building an URL to
-    # the page. This is always "name", but
-    # in the views it's for historic reasons "view_name". We might
-    # change this in near future.
-    # TODO: Change that. In views.py we could simply accept *both*.
-    # First look for "name" and then for "view_name" if "name" is
-    # missing.
-    @classmethod
-    def ident_attr(self):
-        return "name"
-
-    def topic(self):
-        return self._.get("topic", _("Other"))
-
-    # Helper functions for page handlers and render function
-    def page_header(self):
-        return self.phrase("title") + " - " + self.title()
-
-    def page_url(self):
-        return html.makeuri_contextless([(self.ident_attr(), self.name())], filename = "%s.py" % self.type_name())
-
-    # Parameters special for pgge renderers. These can be added to the sidebar,
-    # so we need a topic and a checkbox for the visibility
-    @classmethod
-    def parameters(self, clazz):
-        return [(_("General Properties"), [
-            ( 1.4, 'topic', TextUnicode(
-                title = _('Topic') + '<sup>*</sup>',
-                size = 50,
-                allow_empty = False,
-            )),
-            ( 2.0, 'hidden', Checkbox(
-                title = _("Sidebar integration"),
-                label = _('Do not add a link to this page in sidebar'),
-            )),
-        ])]
-
-
-    # Define page handlers for the neccessary pages like listing all pages, editing
-    # one and so on. This is being called (indirectly) in index.py. That way we do
-    # not need to hard code page handlers for all types of PageTypes in plugins/pages.
-    # It is simply sufficient to register a PageType and all page handlers will exist :-)
-    # TODO: Anscheinend werden alle Views schon geladen,
-    # bevor überhaupt ein Request läuft. Da ist eine load()-Funktion,
-    # die stört. Brauchen wir die hier schon?
-    # TODO: Das edit_ und list ist doch eine Sache von Overridable. Das gehört
-    # hier doch garnicht hin!
-    @classmethod
-    def page_handlers(self):
-        return {
-            "%ss" % self.type_name()     : lambda: self.page_list(),
-            "edit_%s" % self.type_name() : lambda: self.page_edit(),
-            self.type_name()             : lambda: self.page_show(),
-        }
-
-    # Most important: page for showing the page ;-)
-    @classmethod
-    def page_show(self):
-        name = html.var(self.ident_attr())
-        if name == None:
-            raise MKGeneralException(_("You need to specify the name of the %s "
-                       "you want to show in the URL variable \"<tt>%s</tt>\".") % (self.phrase("title"), self.ident_attr()))
-        page = self.find_page(name)
-        if not page:
-            raise MKGeneralException(_("Cannot find %s with the name %s") % (
-                        self.phrase("title"), name))
-        page.render()
-
-
 
 #.
 #   .--Overridable---------------------------------------------------------.
@@ -598,7 +495,7 @@ class Overridable:
     # Find a page by name, implements shadowing and
     # publishing und overriding by admins
     @classmethod
-    def find_page(self, name):
+    def get_element_by_name(self, name):
         self.load()
 
         mine = None
@@ -981,6 +878,15 @@ class ContextAware(Element):
                context_dict[selector.name()] = selector.get_selector_context()
         return Context(self.infos(), self.single_infos(), context_dict)
 
+    # Construct a context from one row of the results of a datasource query
+    def get_context_from_row(self, row):
+        context_dict = {}
+        for info_name in self.single_infos():
+            info = Info.instance(info_name)
+            context_dict.update(info.context_from_row(row))
+        return Context(self.infos(), self.single_infos(), context_dict)
+
+
     def validate_single_infos(self, context):
         for info_name in self.single_infos():
             if info_name not in context:
@@ -997,6 +903,130 @@ class ContextAware(Element):
         context.update(external_context)
         self.validate_single_infos(context)
         return context
+
+
+#.
+#   .--PageRenderer--------------------------------------------------------.
+#   |   ____                  ____                _                        |
+#   |  |  _ \ __ _  __ _  ___|  _ \ ___ _ __   __| | ___ _ __ ___ _ __     |
+#   |  | |_) / _` |/ _` |/ _ \ |_) / _ \ '_ \ / _` |/ _ \ '__/ _ \ '__|    |
+#   |  |  __/ (_| | (_| |  __/  _ <  __/ | | | (_| |  __/ | |  __/ |       |
+#   |  |_|   \__,_|\__, |\___|_| \_\___|_| |_|\__,_|\___|_|  \___|_|       |
+#   |              |___/                                                   |
+#   +----------------------------------------------------------------------+
+#   |  Base class for all things that have an URL and can be rendered as   |
+#   |  an HTML page. And that can be added to the sidebar snapin of all    |
+#   |  pages.
+#   '----------------------------------------------------------------------'
+
+class PageRenderer:
+    # Stuff to be overridden by the implementation of actual page types
+
+    # TODO: Das von graphs.py rauspfluecken. Also alles, was man
+    # überladen muss oder kann.
+
+    # Attribute for identifying that page when building an URL to
+    # the page. This is always "name", but
+    # in the views it's for historic reasons "view_name". We might
+    # change this in near future.
+    # TODO: Change that. In views.py we could simply accept *both*.
+    # First look for "name" and then for "view_name" if "name" is
+    # missing.
+    @classmethod
+    def ident_attr(self):
+        return "name"
+
+    def topic(self):
+        return self._.get("topic", _("Other"))
+
+    # Helper functions for page handlers and render function
+    def page_header(self):
+        return self.phrase("title") + " - " + self.title()
+
+    def page_url(self, add_vars=[]):
+        return html.makeuri_contextless([(self.ident_attr(), self.name())] + add_vars, filename = "%s.py" % self.type_name())
+
+    # Parameters special for pgge renderers. These can be added to the sidebar,
+    # so we need a topic and a checkbox for the visibility
+    @classmethod
+    def parameters(self, clazz):
+        return [(_("General Properties"), [
+            ( 1.4, 'topic', TextUnicode(
+                title = _('Topic') + '<sup>*</sup>',
+                size = 50,
+                allow_empty = False,
+            )),
+            ( 2.0, 'hidden', Checkbox(
+                title = _("Sidebar integration"),
+                label = _('Do not add a link to this page in sidebar'),
+            )),
+        ])]
+
+
+    # Define page handlers for the neccessary pages like listing all pages, editing
+    # one and so on. This is being called (indirectly) in index.py. That way we do
+    # not need to hard code page handlers for all types of PageTypes in plugins/pages.
+    # It is simply sufficient to register a PageType and all page handlers will exist :-)
+    # TODO: Anscheinend werden alle Views schon geladen,
+    # bevor überhaupt ein Request läuft. Da ist eine load()-Funktion,
+    # die stört. Brauchen wir die hier schon?
+    # TODO: Das edit_ und list ist doch eine Sache von Overridable. Das gehört
+    # hier doch garnicht hin!
+    @classmethod
+    def page_handlers(self):
+        return {
+            "%ss" % self.type_name()     : lambda: self.page_list(),
+            "edit_%s" % self.type_name() : lambda: self.page_edit(),
+            self.type_name()             : lambda: self.page_show(),
+        }
+
+    @classmethod
+    def find_page_by_name(self, name):
+        for instance in self.instances():
+            if instance.name() == name:
+                return instance
+
+
+    # Most important: page for showing the page ;-)
+    @classmethod
+    def page_show(self):
+        name = html.var(self.ident_attr())
+        if name == None:
+            raise MKGeneralException(_("You need to specify the name of the %s "
+                       "you want to show in the URL variable \"<tt>%s</tt>\".") % (self.phrase("title"), self.ident_attr()))
+        page = self.get_element_by_name(name)
+        if not page:
+            raise MKGeneralException(_("Cannot find %s with the name %s") % (
+                        self.phrase("title"), name))
+        page.render()
+
+
+#.
+#   .--ContextAwarePageRenderer--------------------------------------------.
+#   |                       ____    _    ____  ____                        |
+#   |                      / ___|  / \  |  _ \|  _ \                       |
+#   |                     | |     / _ \ | |_) | |_) |                      |
+#   |                     | |___ / ___ \|  __/|  _ <                       |
+#   |                      \____/_/   \_\_|   |_| \_\                      |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |  Elements that are context aware and page renderer at the same time  |
+#   |  are relevant targets for being linked to in situations where con-   |
+#   |  texts are present.                                                  |
+#   '----------------------------------------------------------------------'
+
+class ContextAwarePageRenderer(ContextAware, PageRenderer):
+    pass
+
+    @classmethod
+    def get_url_to_page_for_row(self, element_type_name, element_name, row):
+        target_element = get_element_by_type_and_name(element_type_name, element_name)
+        context = target_element.get_context_from_row(row)
+        return target_element.get_url_for_context(context)
+
+    def get_url_for_context(self, context):
+        return self.page_url(context.as_url_variables())
+
 
 
 #.
@@ -1070,7 +1100,7 @@ class Container:
     def add_element_to_container(self, container_name, element_type_name, create_info):
         self.need_overriding_permission("edit")
         need_sidebar_reload = False
-        container = self.find_page(container_name)
+        container = self.get_element_by_name(container_name)
         if not container.is_mine():
             container = container.clone()
             if isinstance(container, PageRenderer) and not container.is_hidden():
@@ -1117,6 +1147,9 @@ class Info(Element):
             "title"          : _("Info"),
             "title_plural"   : _("Infos"), # TODO: Present the user a better name for this
         }.get(what, Element.phrase(what))
+
+    def context_from_row(self, row):
+        return self._["context_from_row"](row)
 
 
 register_element_type(Info)
@@ -1309,4 +1342,12 @@ class Context(Element):
                 selector = Selector.instance(selector_name)
                 rows = selector.select_rows(rows, selector_context)
         return rows
+
+    def as_url_variables(self):
+        url_vars = []
+        for selector_context in self._.values():
+            url_vars += selector_context.items()
+        return url_vars
+
+
 
