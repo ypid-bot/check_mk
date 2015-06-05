@@ -62,6 +62,11 @@ def get_element_by_type_and_name(element_type_name, element_name):
     et = element_type(element_type_name)
     return et.get_element_by_name(element_name)
 
+def all_element_types_implementing(some_class):
+    for element_type in element_types.values():
+        if issubclass(element_type, some_class):
+            yield element_type
+
 
 # Global module functions for the integration into the rest of the code
 
@@ -418,7 +423,7 @@ class Overridable:
         self.render_list_button()
         self.render_edit_button()
 
-    def render_live_buttons(self):
+    def render_header_buttons(self):
         if self.is_mine():
             html.header_button(self.phrase("edit"), self.edit_url(), "edit")
         else:
@@ -946,6 +951,38 @@ class PageRenderer:
     def page_url(self, add_vars=[]):
         return html.makeuri_contextless([(self.ident_attr(), self.name())] + add_vars, filename = "%s.py" % self.type_name())
 
+    @classmethod
+    def global_page_links_by_topic(self):
+        by_topic = {}
+
+        links = []
+        for element_type in all_element_types_implementing(PageRenderer):
+            for topic, title, url in  element_type.global_page_links():
+                by_topic.setdefault(topic, []).append((title, url))
+
+        return self.sort_by_topic(by_topic.items())
+
+    @classmethod
+    def sort_by_topic(self, topic_items):
+        topic_order = [
+            _("Overview"),
+            _("Hosts"),
+            _("Host Groups"),
+            _("Services"),
+            _("Service Groups"),
+            _("Metrics"),
+            _("Business Intelligence"),
+            _("Problems"),
+            _("Other"),
+        ]
+
+        topic_to_nr = dict( [(topic, nr) for nr, topic in enumerate(topic_order)] )
+
+        def cmp_topic(a, b):
+            return cmp(topic_to_nr.get(a[0], 999), topic_to_nr.get(b[0], 999))
+
+        return sorted(topic_items, cmp = cmp_topic)
+
     # Parameters special for pgge renderers. These can be added to the sidebar,
     # so we need a topic and a checkbox for the visibility
     @classmethod
@@ -981,6 +1018,13 @@ class PageRenderer:
         }
 
     @classmethod
+    def global_page_links(self):
+        for page in self.pages():
+            if not page.is_hidden():
+                yield page.topic(), page.title(), page.page_url()
+
+
+    @classmethod
     def find_page_by_name(self, name):
         for instance in self.instances():
             if instance.name() == name:
@@ -999,6 +1043,14 @@ class PageRenderer:
             raise MKGeneralException(_("Cannot find %s with the name %s") % (
                         self.phrase("title"), name))
         page.render()
+
+    def render_header_buttons(self):
+        html.header_button(_("Open this page without the sidebar"),
+                html.makeuri([]), "frameurl", target="_top")
+        html.header_button(_("Show this page with the sidebar"),
+                html.makeuri([("start_url", html.makeuri([]))], filename="index.py"), "pageurl", target="_top")
+
+
 
 
 #.
@@ -1026,8 +1078,6 @@ class ContextAwarePageRenderer(ContextAware, PageRenderer):
 
     def get_url_for_context(self, context):
         return self.page_url(context.as_url_variables())
-
-
 
 
 
@@ -1153,6 +1203,10 @@ class Info(Element):
     def context_from_row(self, row):
         return self._["context_from_row"](row)
 
+    def page_heading_prefix_for(self, selector_context):
+        selector = Selector.instance(self.name())
+        return selector.heading_info(selector_context)
+
 
 register_element_type(Info)
 
@@ -1267,6 +1321,12 @@ class Selector(Element):
     def select_rows(self, rows, selector_context):
         return rows
 
+    # Only needed for selectors of single infos. Vanilla implementation for
+    # the case that the selector context has just one entry
+    def heading_info(self, selector_context):
+        return selector_context.values()[0]
+
+
 register_element_type(Selector)
 
 def register_selector(selector):
@@ -1352,6 +1412,13 @@ class Context(Element):
         for selector_context in self._.values():
             url_vars += selector_context.items()
         return url_vars
+
+    def page_heading_prefix(self):
+        components = [
+            Info.instance(i).page_heading_prefix_for(self._[i])
+            for i in self.single_infos()
+        ]
+        return " / ".join(components)
 
 
 

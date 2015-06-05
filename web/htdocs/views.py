@@ -2957,6 +2957,7 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
     @classmethod
     def sanitize(self, d):
         transform_old_view(d)
+        d.setdefault("num_columns", 1)
         # d.setdefault("single_infos", [])
         # TODO: Hier das umstellen von alten Viewdefinitionen auf neue
 
@@ -3006,19 +3007,23 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
     # TODO: Allow specifying a context that comes not from the URL?
     # TODO: Warum ist dieser Code eigentlich nicht in page renderer???
     def render_html_page(self, context, render_options):
-        self.render_html_header(render_options)
+        self.render_html_header(context, render_options)
         self.render_buttons(render_options)
         self.render_html_table(context, render_options)
         self.render_html_footer(render_options)
 
-    def render_html_header(self, render_options):
-        title = self.title()
-        html.body_start(title, stylesheets=["pages","views","status","bi"])
-        html.top_heading(title)
+    def render_html_header(self, context, render_options):
+        heading = context.page_heading_prefix()
+        if heading:
+            heading += " - "
+        heading += self.title()
+        html.body_start(heading, stylesheets=["pages","views","status","bi"])
+        html.top_heading(heading)
 
     def render_buttons(self, render_options):
         html.begin_header_buttons()
-        elements.Overridable.render_live_buttons(self)
+        elements.Overridable.render_header_buttons(self)
+        elements.PageRenderer.render_header_buttons(self)
         html.end_header_buttons()
 
     def render_html_table(self, context, render_options):
@@ -3286,5 +3291,4 @@ def register_view_layout(name, d):
 # - Inventory-Daten mit Filtern und Columns
 # - display_options müssen wieder wirken
 # - Site hint
-# - Seitentitel bei Views mit Single-Kontexten
 # ...

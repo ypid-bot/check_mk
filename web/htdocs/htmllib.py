@@ -439,9 +439,9 @@ class html:
     def end_header_buttons(self):
         self.write("</div>\n")
 
-    def header_button(self, title, url, icon):
-        self.icon_button(url, title, icon)
-        
+    def header_button(self, title, url, icon, target=""):
+        self.icon_button(url, title, icon, target=target)
+
     def begin_context_buttons(self):
         if not self.context_buttons_open:
             self.context_button_hidden = False
@@ -986,6 +986,7 @@ class html:
         self.write(self.render_popup_trigger(content, ident, what, data, params))
 
     def write_status_icons(self):
+        # TODO: Remove this as soon as all has been converted to elements.py
         self.write('<a target="_top" href="%s"><img class=statusicon src="images/status_frameurl.png" title="%s"></a>\n' % \
              (self.makeuri([]), _("URL to this frame")))
         self.write('<a target="_top" href="%s"><img class=statusicon src="images/status_pageurl.png" title="%s"></a>\n' % \
