@@ -24,7 +24,6 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-#.
 #   .--Dataset-------------------------------------------------------------.
 #   |                  ____        _                 _                     |
 #   |                 |  _ \  __ _| |_ __ _ ___  ___| |_                   |
@@ -49,13 +48,16 @@ def render_single_dataset(rows, view, group_painters, painters, num_columns, _ig
             html.write("<tr class=gap><td class=gap colspan=%d></td></tr>\n" % (1 + num_columns))
         thispart = rows[rownum:rownum + num_columns]
         for p in painters:
-            painter, link = p[0:2]
-            if len(p) >= 5 and p[4]:
-                title = p[4] # Use custom title
-            elif len(p) == 4 and p[3]:
-                title = p[3] # Use the join index (service name) as title
+            if isinstance(p, Painter):
+                title = p.get_long_column_header()
             else:
-                title = painter["title"]
+                painter, link = p[0:2]
+                if len(p) >= 5 and p[4]:
+                    title = p[4] # Use custom title
+                elif len(p) == 4 and p[3]:
+                    title = p[3] # Use the join index (service name) as title
+                else:
+                    title = painter["title"]
 
             odd = odd == "odd" and "even" or "odd"
             html.write('<tr class="data %s0">' % odd)
@@ -77,6 +79,8 @@ multisite_layouts["dataset"] = {
     "group"  : False,
     "checkboxes" : False,
 }
+
+register_view_layout("dataset", multisite_layouts["dataset"])
 
 
 
@@ -106,7 +110,7 @@ def render_grouped_boxes(rows, view, group_painters, painters, num_columns, show
             last_group = this_group
             current_group = []
             groups.append((this_group, current_group))
-        current_group.append((row_id(view, row), row))
+        current_group.append(row)
 
     def height_of(groups):
         # compute total space needed. I count the group header like two rows.
@@ -150,7 +154,7 @@ def render_grouped_boxes(rows, view, group_painters, painters, num_columns, show
         for p in group_painters:
             if painted:
                 html.write("<td>,</td>")
-            painted = paint(p, rows[0][1])
+            painted = paint(p, rows[0])
         html.write("</tr></table>\n")
 
         html.write("<table class=data>")
@@ -170,7 +174,7 @@ def render_grouped_boxes(rows, view, group_painters, painters, num_columns, show
             show_header_line()
 
         visible_row_number = 0
-        for index, row in rows:
+        for row in rows:
             if view.get("column_headers") == "repeat":
                 if visible_row_number > 0 and visible_row_number % repeat_heading_every == 0:
                     show_header_line()

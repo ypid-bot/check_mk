@@ -1177,6 +1177,14 @@ def unpack_context_after_editing(packed_context):
 
 def declare_info(infoname, info):
     infos[infoname] = info
+    register_info(
+        Info(
+            name = infoname,
+            title = info["title"],
+            title_plural = info["title_plural"],
+        )
+    )
+
 
 def is_single_site_info(info_key):
     return infos[info_key].get('single_site', True)

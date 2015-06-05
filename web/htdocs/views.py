@@ -911,7 +911,7 @@ def prepare_display_options():
     if html.var('display_options'):
         html.title_display_options = html.var("display_options")
 
-    # If display option 'M' is set, then all links are targetet to the 'main'
+    # If display option 'M' is set, then all links are targeted to the 'main'
     # frame. Also the display options are removed since the view in the main
     # frame should be displayed in standard mode.
     if 'M' not in display_options:
@@ -2240,11 +2240,9 @@ def link_to_view(content, row, view_name):
 def docu_link(topic, text):
     return '<a href="%s" target="_blank">%s</a>' % (config.doculink_urlformat % topic, text)
 
+# Calculates a uniq id for each data row which identifies the current
+# row accross different page loadings.
 def row_id(view, row):
-    '''
-    Calculates a uniq id for each data row which identifies the current
-    row accross different page loadings.
-    '''
     key = ''
     for col in multisite_datasources[view['datasource']]['idkeys']:
         key += '~%s' % row[col]
@@ -2698,8 +2696,7 @@ class Datasource(elements.Element):
     # TODO: Hierbei muss das Limit berücksichtigt werden.
     def query(self, columns, context, limit=None):
         rows = self.do_query(columns, context, limit)
-        rows = context.select_rows(rows, context) # Non-livestatus filtering
-        return rows
+        return context.select_rows(rows, context) # Non-livestatus filtering
 
     # Override this in order to perform the actual data retreiving
     @mandatory
@@ -2732,7 +2729,7 @@ class LivestatusDatasource(Datasource):
         # - Single Infos
         # - Site hint
         # - Das was keys und idkeys in den datasources machen. Da haben wir
-        #   aktuell Duplikaten!
+        #   aktuell Duplikate!
         # - Implizite site-Spalte entfernen, falls vorhanden. Noch besser: verhindern,
         #   dass sie rein kommt
         # - Move global method do_query_data() here.
@@ -2880,6 +2877,9 @@ class Painter(elements.Element):
     def get_column_header(self):
         return self._.get("short", self.title())
 
+    def get_long_column_header(self):
+        return self.title()
+
     def get_group_value(self, row):
         groupvalfunc = self._.get("groupby")
         if groupvalfunc:
@@ -2925,14 +2925,16 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
         elements.Element.__init__(self, d)
         try:
             self._layout = ViewLayout.instance(self._["layout"])
+        except:
+            # TODO: Remove this exception handler
+            # html.debug("Layout %s fehlt noch. Ich verwende %s" % (self._["layout"], "table"))
+            self._layout = ViewLayout.instance("table")
+
+        try:
             self._datasource = Datasource.instance(self._["datasource"])
         except:
-            if d["name"] in ["host", "allhosts"]:
-                raise
-            pass
-            # TODO: Das hier wieder aktivieren und sicherstellen, dass alle DS da sind.
-            # if config.debug:
-            #     raise MKGeneralException("TableView %s: datasource %s is missing" % (d["name"], d["datasource"]))
+            # TODO: Remove this exception handler
+            self._datasource = Datasource.instance("hosts")
 
     @classmethod
     def type_name(self):
@@ -3033,6 +3035,7 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
 
     # Overridden from PageRenderer
     def render(self):
+        # TODO: Should we not move some code to ContextAwarePageRenderer?
         context = self.build_inner_context(self.get_context_from_url())
         render_options = self.get_render_options()
         self.render_html_page(context, render_options)
@@ -3045,7 +3048,8 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
         return {
             "view_options"    : self.get_view_options(),
             "painter_options" : self.prepare_painter_options(),
-            # "display_options" : self.get_display_options(),
+            # TODO: display_options is a great hack. Clean it up.
+            "display_options" : prepare_display_options(),
             # "limit"           : self.get_limit(),
             # TODO: checkboxes
             # TODO: layout options
@@ -3272,7 +3276,7 @@ def register_view_layout(name, d):
 # - Limit
 # - Kommandos
 # - Selektoren
-# - Dass alle Layouts gehen
+# - Dass alle Layouts gehen (fehlt noch Tiled, Matrix, Mobile...)
 # - Dass alle Views gehen
 # - Dass alle Datasources gehen
 # - Join Columns
@@ -3282,4 +3286,5 @@ def register_view_layout(name, d):
 # - Inventory-Daten mit Filtern und Columns
 # - display_options müssen wieder wirken
 # - Site hint
+# - Seitentitel bei Views mit Single-Kontexten
 # ...

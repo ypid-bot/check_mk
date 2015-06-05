@@ -167,8 +167,7 @@ def paint_perfometer(row):
     content += '<img class=glass src="images/perfometer-bg.png">'
 
     # pnpgraph_present: -1 means unknown (path not configured), 0: no, 1: yes
-    if 'X' in html.display_options and \
-       row["service_pnpgraph_present"] != 0:
+    if 'X' in html.display_options and row["service_pnpgraph_present"] != 0:
         return "perfometer" + stale_css, ('<a href="%s">%s</a>' % (pnp_url(row, "service"), content))
     else:
         return "perfometer" + stale_css, content

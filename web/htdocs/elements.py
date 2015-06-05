@@ -265,7 +265,7 @@ class Element:
 
     @classmethod
     def has_instance(self, key):
-        return key in self.__instances
+        return key in self.instances_dict()
 
     @classmethod
     def instance(self, key):
@@ -1029,6 +1029,8 @@ class ContextAwarePageRenderer(ContextAware, PageRenderer):
 
 
 
+
+
 #.
 #   .--Container-----------------------------------------------------------.
 #   |              ____            _        _                              |
@@ -1327,6 +1329,8 @@ class Context(Element):
         headers = ""
         for selector_name, selector_context in self._.items():
             if not Selector.has_instance(selector_name):
+                # html.debug("MIST: Selektor %s fehlt." % selector_name)
+                # html.debug(("ALLE:", Selector.instances_dict()))
                 pass
             else:
                 selector = Selector.instance(selector_name)
