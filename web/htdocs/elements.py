@@ -24,6 +24,15 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
+#   .--imports-------------------------------------------------------------.
+#   |                _                            _                        |
+#   |               (_)_ __ ___  _ __   ___  _ __| |_ ___                  |
+#   |               | | '_ ` _ \| '_ \ / _ \| '__| __/ __|                 |
+#   |               | | | | | | | |_) | (_) | |  | |_\__ \                 |
+#   |               |_|_| |_| |_| .__/ \___/|_|   \__|___/                 |
+#   |                           |_|                                        |
+#   '----------------------------------------------------------------------'
+
 import os, pprint, inspect
 import config, table, forms
 from lib import *
@@ -34,6 +43,7 @@ try:
 except ImportError:
     import json
 
+#.
 #   .--globals-------------------------------------------------------------.
 #   |                         _       _           _                        |
 #   |                    __ _| | ___ | |__   __ _| |___                    |
@@ -229,6 +239,12 @@ class Element:
     # compatible.
     def name(self):
         return self._["name"]
+
+    def topic(self):
+        if "topic" in self._:
+            return self._["topic"]
+        else:
+            return self.default_topic()
 
     def title(self):
         return self._["title"]
@@ -1106,7 +1122,7 @@ class ContextAwarePageRenderer(ContextAware, PageRenderer):
         return self.sort_by_topic(by_topic.items())
 
     def has_page_links(self, context):
-        # This is just a heuristics
+        # This is just a guess
         return context.single_infos() != []
 
     @classmethod
@@ -1167,10 +1183,30 @@ class ContextAwarePageRenderer(ContextAware, PageRenderer):
             is_open = False)
 
     def render_selectors_form(self, context, render_options, is_open):
+        is_open = True # TODO
+        html.begin_form("filter")
         html.write('<div class="view_form" id="selectors" %s>' %
                 (not is_open and 'style="display: none"' or '') )
-        html.write("Hier kommen die Selektoren, wenn sie denn mal fertig sind")
+        by_topic = self.sort_by_topic(Selector.selectors_by_topic(context).items())
+        for topic, selectors in by_topic:
+            self.render_selector_topic(context, topic, selectors)
+
+        html.button("search", _("Search"), "submit")
+        html.hidden_fields()
+        html.end_form()
         html.write('</div>')
+
+
+    def render_selector_topic(self, context, topic, selectors):
+        html.write("<div class=selector_topic>")
+        html.write("<div class=topic>%s</div>" % topic)
+        html.write("<div class=selector_container>")
+        for selector in selectors:
+            selector_context = context.get(selector.name(), {})
+            selector.render(selector_context)
+        html.write("</div>")
+        html.write("</div><br>")
+
 
     def render_page_links_button(self, context):
         if self.has_page_links(context):
@@ -1179,6 +1215,8 @@ class ContextAwarePageRenderer(ContextAware, PageRenderer):
                 div_id = "page_links",
                 icon = "page_links",
                 is_open = False)
+
+
 
 
 #.
@@ -1393,7 +1431,6 @@ class Selector(Element):
     def is_active(self):
         pass
 
-
     # Some selectors can be unavailable due to the configuration (e.g.
     # the WATO Folder selector is only available if WATO is enabled.
     def available(self):
@@ -1426,6 +1463,26 @@ class Selector(Element):
     def heading_info(self, selector_context):
         return selector_context.values()[0]
 
+    @classmethod
+    def selectors_by_topic(self, context):
+        by_topic = {}
+        for selector in self.instances():
+            if selector.info() not in context.infos():
+                continue # not relevant for current context
+            if selector.info() in context.single_infos() and \
+                selector.name() != selector.info():
+                continue # not *the* single info selector for this info
+            topic = selector.topic()
+            by_topic.setdefault(topic, []).append(selector)
+        return by_topic
+
+    def render(self, selector_context):
+        html.write('<div class="selector %s">' % (self.double_height() and "double" or "single"))
+        html.write('<div class=legend>%s</div>' % self.title())
+        html.write('<div class=content>')
+        self.render_input(selector_context)
+        html.write("</div>")
+        html.write("</div>")
 
 register_element_type(Selector)
 
@@ -1488,6 +1545,10 @@ class Context(Element):
             if info_name in self._:
                 new_dict[info_name] = self._[info_name]
         return Context(self.infos(), self.single_infos(), new_dict)
+
+    def get(self, selector_name, default_value=None):
+        return self._.get(selector_name, default_value)
+
 
     # Much like a dict update, but we make sure that the original
     # dict (which we might have borrowed from somewhere) is not

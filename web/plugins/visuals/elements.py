@@ -33,9 +33,14 @@ from elements import Selector, register_selector
 class TextSelector(Selector):
     def __init__(self, **kwargs):
         Selector.__init__(self, **kwargs)
+        self._variable_name = self.variables()[0]
 
     def is_active(self):
-        return bool(html.var(self.variables()[0]))
+        return bool(html.var(self._variable_name))
+
+    def render_input(self, selector_context):
+        current_value = selector_context.get(self._variable_name, "")
+        html.text_input(self._variable_name, current_value)
 
 
 class LivestatusTextSelector(TextSelector):
@@ -50,6 +55,7 @@ class LivestatusTextSelector(TextSelector):
 register_selector(
     LivestatusTextSelector(
         name       = "host",
+        topic      = _("Hosts"),
         title      = _("Host"),
         info       = "host",
         variables  = [ "host" ],
@@ -60,6 +66,7 @@ register_selector(
 register_selector(
     LivestatusTextSelector(
         name       = "host_regex",
+        topic      = _("Hosts"),
         title      = _("Hostname (regular expression)"),
         info       = "host",
         variables  = [ "host_regex" ],
@@ -70,6 +77,7 @@ register_selector(
 register_selector(
     LivestatusTextSelector(
         name       = "service",
+        topic      = _("Services"),
         title      = _("Service"),
         info       = "service",
         variables  = [ "service" ],
@@ -80,12 +88,17 @@ register_selector(
 register_selector(
     LivestatusTextSelector(
         name       = "service_regex",
+        topic      = _("Services"),
         title      = _("Service (regular expression)"),
         info       = "service",
         variables  = [ "service_regex" ],
         expression = "~~",
         column     = "service_description",
 ))
+
+# TODO: Wir müssen alle bestehenden Filter umsetzen. Dazu können wir uns
+# eine kleine Hilfsfunktion schreiben, welche kontrolliert, ob die Listen
+# der Filter und Selektoren auch wirklich gleich sind.
 
 class GOOBAR_FilterText(Filter):
     def __init__(self, name, title, info, column, htmlvar, op, negateable=False):

@@ -3225,7 +3225,11 @@ def register_view_layout(name, d):
 # - Buttons Export as PDF, CSV und so Zeug
 # - Limit
 # - Kommandos
-# - Selektoren
+# - Selektoren nicht immer anzeigen, dafür aber Knopf zum Hinzufügen.
+#   Gut wäre, wenn alle einfach da, aber hidden sind. Dann kann man sie
+#   per JS einblenden. Beim Malen müssen die Selektoren wissen, ob sie
+#   aktiv sind und nur dann direkt angezeigt werden. Man könnte auch
+#   ein paar "prominente" Filter immer anzeigen.
 # - Dass alle Layouts gehen (fehlt noch Tiled, Matrix, Mobile...)
 # - Dass alle Views gehen
 # - Dass alle Datasources gehen

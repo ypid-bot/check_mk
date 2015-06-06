@@ -44,6 +44,8 @@ body.main.dashlet {
 | containing the buttons "filter", "commands", "display" and so on.        |
 '-------------------------------------------------------------------------*/
 
+/* TODO: The remove the whole filter stuff as soon as elements.py is operable */
+
 table.filterform {
     border-collapse: collapse;
     padding: 0px;
