@@ -2952,6 +2952,7 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
         }[what]
 
     @classmethod
+    # TODO: rename this method into something more meaningfull
     def ident_attr(self):
         return "view_name" # Make URLs compatible with old views.
 
@@ -2960,10 +2961,9 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
         transform_old_view(d)
         d.setdefault("num_columns", 1)
         d.setdefault("browser_reload", None)
-        # d.setdefault("single_infos", [])
-        # TODO: Hier das umstellen von alten Viewdefinitionen auf neue
 
     @classmethod
+    # TODO: Umbenennen. builtin_elements
     def builtin_pages(self):
         return multisite_builtin_views
 
@@ -2993,25 +2993,25 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
     # Return a list of the names of all columns that need to
     # be fetched from the datasource. There are several reasons
     # why we need columns:
-    # - Painters need columns for being painted
-    # - The Datasource specifies mandatory columns
-    # - Filters might need columns for their (non-Livestatus) work
     def required_columns(self):
         columns = set([])
         for painter in self.column_painters() + self.group_painters():
             columns.update(painter.required_columns())
         # TODO:
         # - Columns of datasource (or should this be implicit?)
-        # - Columns of filters (we need the context therefore)
+        # - Columns of selectors (we need the context therefore)
         return columns
 
     # Renders a view in HTML.
-    # TODO: Allow specifying a context that comes not from the URL?
     # TODO: Warum ist dieser Code eigentlich nicht in page renderer???
+    # Oder in ContextAwarePageRenderer?
     def render_html_page(self, context, render_options):
         self.render_html_header(context, render_options)
-        self.render_buttons(render_options)
-        self.render_page_links(context, render_options)
+        self.render_buttons(context, render_options)
+        self.render_page_links(context, render_options, is_open=False)
+        self.render_commands_form(context, render_options, is_open=False)
+        # TODO: Move this to ContextAwarePageRenderer
+        self.render_selectors_form(context, render_options, is_open=False)
         self.render_html_table(context, render_options)
         self.render_html_footer(render_options)
 
@@ -3020,22 +3020,36 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
         if heading:
             heading += " - "
         heading += self.title()
-        html.body_start(heading, stylesheets=["pages","views","status","bi"])
+        html.body_start(heading, stylesheets=["pages", "views", "status", "bi"])
         html.top_heading(heading)
 
-    def render_buttons(self, render_options):
-        html.begin_header_buttons()
+    def render_buttons(self, context, render_options):
+        self.begin_header_buttons()
         elements.Overridable.render_header_buttons(self)
         elements.PageRenderer.render_header_buttons(self)
-        html.end_header_buttons()
+        elements.ContextAwarePageRenderer.render_header_buttons(self, context)
+        self.render_commands_button()
+        self.end_header_buttons()
+
+    def render_commands_button(self):
+        self.header_toggle_button(
+            title = _("Execute commands on the objects displayed in this table"),
+            div_id = "commands",
+            icon = "commands",
+            is_open = False)
+
+    def render_commands_form(self, context, render_options, is_open):
+        # TODO: Hier eine eigene Funktion draus machen und in die eigene Klasse
+        # übernehmen.
+        show_command_form(is_open, self.datasource())
 
     def render_html_table(self, context, render_options):
         columns = sorted(list(self.required_columns()))
         rows = self.datasource().query(columns, context)
-        layout = self.layout()
-        layout.render(rows, self.column_painters(), self.group_painters(), render_options)
+        self.layout().render(rows, self.column_painters(), self.group_painters(), render_options)
 
     def render_html_footer(self, render_options):
+        # TODO: Also das hier muss mindestens nach PageRenderer
         html.bottom_focuscode()
         html.bottom_footer()
         html.body_end()
@@ -3047,6 +3061,10 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
         context = self.build_inner_context(self.get_context_from_url())
         render_options = self.get_render_options()
         self.render_html_page(context, render_options)
+        # TODO: Wir müssen hier trennen. Die Optionen, die nur eine TableView betreffen,
+        # müssen in dieser Klasse behandelt werden. Die Display Options gehören nach
+        # PageRenderer. Dumm ist nur, dass manche display_options direkt views betreffen.
+        # Diese sollten wir verallgemeinern oder streichen.
 
     # Render options consist of three sections:
     # - view_options: render options for the view as a whole
@@ -3073,6 +3091,8 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
 
 
     def prepare_painter_options(self):
+        # TODO: Diese Funktion ändert und ermittelt gleichzeitig.
+        # nicht schön.
         options = {}
         options.update(self.get_painter_options_defaults())
         if self.may_change_painter_options():
@@ -3134,84 +3154,6 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
     def may_change_painter_options(self):
         return config.may("general.painter_options")
 
-
-    #### # We should rename this into "painter_options". Also the saved file.
-    #### # TODO: Move this to be a member function of TableView
-    #### def XXX_view_options(viewname):
-    ####     # Options are stored per view. Get all options for all views
-    ####     vo = config.load_user_file("viewoptions", {})
-
-    ####     # Now get options for the view in question
-    ####     v = vo.get(viewname, {})
-    ####     must_save = False
-
-    ####     # Now override the loaded options with new option settings that are
-    ####     # provided by the URL. Our problem: we do not know the URL variables
-    ####     # that a valuespec expects. But we know the common prefix of all
-    ####     # variables for each option.
-    ####     if config.may("general.painter_options"):
-    ####         for option_name, opt in multisite_painter_options.items():
-    ####             have_old_value = option_name in v
-    ####             if have_old_value:
-    ####                 old_value = v.get(option_name)
-
-    ####             # Are there settings for this painter option present?
-    ####             var_prefix = 'po_' + option_name
-    ####             if html.has_var_prefix(var_prefix):
-
-    ####                 # Get new value for the option from the value spec
-    ####                 vs = opt['valuespec']
-    ####                 value = vs.from_html_vars(var_prefix)
-
-    ####                 v[option_name] = value
-    ####                 opt['value'] = value # make globally present for painters
-
-    ####                 if not have_old_value or v[option_name] != old_value:
-    ####                     must_save = True
-
-    ####             elif have_old_value:
-    ####                 opt['value'] = old_value # make globally present for painters
-    ####             elif 'value' in opt:
-    ####                 del opt['value']
-
-    ####    # If the user has no permission for changing painter options
-    ####    # (or has *lost* his permission) then we need to remove all
-    ####    # of the options. But we do not save.
-    ####    else:
-    ####        for on, opt in multisite_painter_options.items():
-    ####            if on in v:
-    ####                del v[on]
-    ####                must_save = True
-    ####            if 'value' in opt:
-    ####                del opt['value']
-
-    ####    if must_save:
-    ####        vo[viewname] = v
-    ####        config.save_user_file("viewoptions", vo)
-
-    ####    return v
-
-    # TODO: only_count. Das mache ich komplett ohne den ganzen show_view()
-    # mist.  Das macht einfach die Datasource. Wir brauchen nur den Kontext und
-    # die Datasource und die muss in der Lage sein, die Anzahl zu ermitteln
-    # - effizient.
-
-    # show context links: Das könnte man doch unabhängig von der View definieren.
-    # Die Verknüpfung zu anderen Views und sonstigen anderen Dingen sollte übergreifend
-    # funktionieren. Damit bekommt man auch das mit der Availability besser in den
-    # Griff. Eigenlich muss jeder ContextAware-PageHandler hier beteiligt werden.
-
-    # Dazu kommen dann noch die Knöpfe, die für die View spezifisch sind.
-
-    # Was brauche ich zum Malen einer TableView: Statisch in der TableView sind painters,
-    # group_painters, layout. Dynamisch sind context und rows. Den context
-    # brauche ich z.B. für den Titel. Allerdings könnte man auch das mit
-    # dem Titel gleich so umbauen, dass nur die single_infos angezeigt werden
-    # und ein Icon davor. jedes Info bekommt ein Icon. Dann muss man für
-    # view_titel nicht auf Selektoren zurückgreifen.
-
-    # Der PageRenderer() ist für das Hauptlayout der Seite verantwortlich.
-    # Titel. Uhrzeit. Hilfeknopf. Footer.
 
 elements.register_element_type(TableView)
 
@@ -3294,4 +3236,6 @@ def register_view_layout(name, d):
 # - Inventory-Daten mit Filtern und Columns
 # - display_options müssen wieder wirken
 # - Site hint
+# - Only Count. Wer ruft das auf?
+# - Reporting muss wieder funktionuckeln
 # ...

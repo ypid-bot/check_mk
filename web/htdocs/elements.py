@@ -425,9 +425,9 @@ class Overridable:
 
     def render_header_buttons(self):
         if self.is_mine():
-            html.header_button(self.phrase("edit"), self.edit_url(), "edit")
+            self.header_button(self.phrase("edit"), self.edit_url(), "edit")
         else:
-            html.header_button(self.phrase("clone"), self.clone_url(), "clone")
+            self.header_button(self.phrase("clone"), self.clone_url(), "clone")
 
 
     @classmethod
@@ -1045,13 +1045,30 @@ class PageRenderer:
                         self.phrase("title"), name))
         page.render()
 
+
+    def begin_header_buttons(self):
+        html.write("<div class=headerbuttons>\n")
+
+    def end_header_buttons(self):
+        html.write("</div>\n")
+
+    def header_button(self, title, url, icon, target=""):
+        html.icon_button(url, title, icon, target=target)
+
+    def header_toggle_button(self, title, div_id, icon, is_open):
+        if is_open:
+            cssclass = "down"
+        else:
+            cssclass = "up"
+        html.write('<div id="%s_on" class="togglebutton %s %s" title="%s" '
+                   'onclick="view_toggle_form(this, \'%s\');"></div>' % (
+                   div_id, cssclass, icon, title, div_id))
+
     def render_header_buttons(self):
-        html.header_button(_("Open this page without the sidebar"),
+        self.header_button(_("Open this page without the sidebar"),
                 html.makeuri([]), "frameurl", target="_top")
-        html.header_button(_("Show this page with the sidebar"),
+        self.header_button(_("Show this page with the sidebar"),
                 html.makeuri([("start_url", html.makeuri([]))], filename="index.py"), "pageurl", target="_top")
-
-
 
 
 #.
@@ -1088,6 +1105,10 @@ class ContextAwarePageRenderer(ContextAware, PageRenderer):
                     by_topic.setdefault(topic, []).append((title, url))
         return self.sort_by_topic(by_topic.items())
 
+    def has_page_links(self, context):
+        # This is just a heuristics
+        return context.single_infos() != []
+
     @classmethod
     def context_page_links(self, context):
         single_info_context = context.get_single_info_context()
@@ -1097,9 +1118,14 @@ class ContextAwarePageRenderer(ContextAware, PageRenderer):
                 links.append((page.topic(), page.title(), page.get_url_for_context(single_info_context)))
         return links
 
-    def render_page_links(self, context, render_options):
-        for topic, links in self.context_page_links_by_topic(context):
-            self.render_page_link_topic(topic, links)
+    def render_page_links(self, context, render_options, is_open):
+        by_topic = self.context_page_links_by_topic(context)
+        if by_topic:
+            html.write('<div class="view_form" id="page_links" %s>' %
+                    (not is_open and 'style="display: none"' or '') )
+            for topic, links in by_topic:
+                self.render_page_link_topic(topic, links)
+            html.write('</div>')
 
     def render_page_link_topic(self, topic, links):
         html.write("<h3>%s</h3>" % topic)
@@ -1127,6 +1153,32 @@ class ContextAwarePageRenderer(ContextAware, PageRenderer):
 
     def do_not_context_link(self):
         return bool(self._.get("hidebutton"))
+
+    def render_header_buttons(self, context):
+        self.render_selectors_button()
+        self.render_page_links_button(context)
+
+    def render_selectors_button(self):
+        # TODO: is_open bei Search-Views immer True
+        self.header_toggle_button(
+            title = _("Refine the contents of this table by defining selectors (filters)"),
+            div_id = "selectors",
+            icon = "selectors",
+            is_open = False)
+
+    def render_selectors_form(self, context, render_options, is_open):
+        html.write('<div class="view_form" id="selectors" %s>' %
+                (not is_open and 'style="display: none"' or '') )
+        html.write("Hier kommen die Selektoren, wenn sie denn mal fertig sind")
+        html.write('</div>')
+
+    def render_page_links_button(self, context):
+        if self.has_page_links(context):
+            self.header_toggle_button(
+                title = _("Useful links to other pages about the same object"),
+                div_id = "page_links",
+                icon = "page_links",
+                is_open = False)
 
 
 #.

@@ -166,6 +166,8 @@ table.filtertime td {
 }
 
 
+/* TODO: Do we *really* need that copy&paste orgy here? */
+/* Filters are being removed as soon as elements.py is finished. */
 div.togglebutton.filters         { background-image: url("images/button_filters_lo.png"); }
 div.togglebutton.filters:hover   { background-image: url("images/button_filters_hi.png"); }
 div.togglebutton.filters.down       { background-image: url("images/button_filters_down_lo.png"); }
@@ -177,6 +179,24 @@ div.togglebutton.filters_set:hover   { background-image: url("images/button_filt
 div.togglebutton.filters_set.down       { background-image: url("images/button_filters_set_down_lo.png"); }
 div.togglebutton.filters_set.down:hover { background-image: url("images/button_filters_set_down_hi.png"); }
 div.togglebutton.filters_set.off      { background-image: url("images/button_filters_set_off.png"); }
+
+div.togglebutton.selectors         { background-image: url("images/button_selectors_lo.png"); }
+div.togglebutton.selectors:hover   { background-image: url("images/button_selectors_hi.png"); }
+div.togglebutton.selectors.down       { background-image: url("images/button_selectors_down_lo.png"); }
+div.togglebutton.selectors.down:hover { background-image: url("images/button_selectors_down_hi.png"); }
+div.togglebutton.selectors.off      { background-image: url("images/button_selectors_off.png"); }
+
+div.togglebutton.selectors_set         { background-image: url("images/button_selectors_set_lo.png"); }
+div.togglebutton.selectors_set:hover   { background-image: url("images/button_selectors_set_hi.png"); }
+div.togglebutton.selectors_set.down       { background-image: url("images/button_selectors_set_down_lo.png"); }
+div.togglebutton.selectors_set.down:hover { background-image: url("images/button_selectors_set_down_hi.png"); }
+div.togglebutton.selectors_set.off      { background-image: url("images/button_selectors_set_off.png"); }
+
+div.togglebutton.page_links         { background-image: url("images/button_page_links_lo.png"); }
+div.togglebutton.page_links:hover   { background-image: url("images/button_page_links_hi.png"); }
+div.togglebutton.page_links.down       { background-image: url("images/button_page_links_down_lo.png"); }
+div.togglebutton.page_links.down:hover { background-image: url("images/button_page_links_down_hi.png"); }
+div.togglebutton.page_links.off      { background-image: url("images/button_page_links_off.png"); }
 
 div.togglebutton.painteroptions         { background-image: url("images/button_painteroptions_lo.png"); }
 div.togglebutton.painteroptions:hover   { background-image: url("images/button_painteroptions_hi.png"); }
