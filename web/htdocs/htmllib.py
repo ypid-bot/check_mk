@@ -1109,6 +1109,8 @@ class html:
             self.write('</div>')
 
     def do_actions(self):
+        # TODO: Das hat hier nix verloren. Entfernen, sobald alles
+        # auf elements.py imgestellt ist.
         return self.var("_do_actions") not in [ "", None, _("No") ]
 
     def set_focus(self, varname):

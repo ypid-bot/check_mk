@@ -1183,7 +1183,6 @@ class ContextAwarePageRenderer(ContextAware, PageRenderer):
             is_open = False)
 
     def render_selectors_form(self, context, render_options, is_open):
-        is_open = True # TODO
         html.begin_form("filter")
         html.write('<div class="view_form" id="selectors" %s>' %
                 (not is_open and 'style="display: none"' or '') )

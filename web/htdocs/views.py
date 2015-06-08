@@ -3010,8 +3010,8 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
         self.render_buttons(context, render_options)
         self.render_page_links(context, render_options, is_open=False)
         self.render_commands_form(context, render_options, is_open=False)
-        # TODO: Move this to ContextAwarePageRenderer
-        self.render_selectors_form(context, render_options, is_open=False)
+        self.do_commands()
+        self.render_selectors_form(context, render_options, is_open=False) # TODO: Move to ContextAwarePageRenderer
         self.render_html_table(context, render_options)
         self.render_html_footer(render_options)
 
@@ -3042,6 +3042,21 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
         # TODO: Hier eine eigene Funktion draus machen und in die eigene Klasse
         # übernehmen.
         show_command_form(is_open, self.datasource())
+
+    # Kommandos haben (aktuell) folgende Phasen:
+    # - None - Keine Aktionen, nur Anzeigen der Tabelle
+    # - "complain" - Benutzerdaten sind nicht vollständig oder falsch
+    # - "confirm" - Wollen Sie wirklich ...
+    # - "actions" - Wirklich ausführen, oder Fehler anzeigen
+    def do_commands(self):
+        phase = self.command_phase()
+
+    def command_phase(self):
+        if self.var("_do_actions") in [ "", None, _("No") ]:
+            return None
+        if not html.transaction_valid():
+            return None
+        return "confirm"
 
     def render_html_table(self, context, render_options):
         columns = sorted(list(self.required_columns()))
@@ -3221,7 +3236,7 @@ def register_view_layout(name, d):
 #   '----------------------------------------------------------------------'
 
 # - Sortieren von Spalten
-# - Kontextbuttons zu anderen Views
+# - Kontextbuttons zu anderen Views besser layouten
 # - Buttons Export as PDF, CSV und so Zeug
 # - Limit
 # - Kommandos
@@ -3242,4 +3257,13 @@ def register_view_layout(name, d):
 # - Site hint
 # - Only Count. Wer ruft das auf?
 # - Reporting muss wieder funktionuckeln
+# - automatischer Reload
+# - Validierung von Filtern anzeigen (User errors)
+# - Wir müssen das ganze mit den Aktionen auch aufräumen. Und vereinfachen.
+#   - Während der Confirm-Phase muss die View nicht unbedingt angezeigt werden.
+#     stattdessen könnten wir einfach nur die Objekte auflisten.
+#   - Wenn die Kommandos ausgeführt sind, könnten wir den Ergebnisschirm einfach
+#     auslassen und das Ergebnis als Kasten über der View anzeigen. Frage ist noch,
+#     wie wir mit dieser Auswahlmöglichkeit mit den Checkboxen vorgehen.
+#   - Diese komische row-selection muss auch aufgeräumt werden. 
 # ...
