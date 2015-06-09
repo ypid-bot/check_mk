@@ -48,15 +48,33 @@ register_info(
         title            = _("Host"),
         title_plural     = _("Hosts"),
         context_from_row = lambda row: { "host" : row["host_name"] },
+        key_columns      = [ "host_name" ],
 ))
 
 register_info(
     Info(
-        name         = "service",
-        title        = _("Service"),
-        title_plural = _("Services"),
+        name             = "service",
+        title            = _("Service"),
+        title_plural     = _("Services"),
         context_from_row = lambda row: { "service" : row["service_description"] },
+        key_columns      = [ "service_description" ],
 ))
+
+register_info(
+    Info(
+        name             = "log",
+        title            = _("Monitoring Log Entry"),
+        title_plural     = _("Monitoring Log Entries"),
+))
+
+infos['log'] = {
+    'title'       : _('Log Entry'),
+    'title_plural': _('Log Entries'),
+    # TODO: Es könnte doch einen geben: nämlich die Kombi aus Zeitstempel und
+    # Dateizeile. Dafür können wir einen hübschen Filter bauen, den man sowieso
+    # nicht händisch braucht, aber nur so kann man einen single-Kontext herstellen!
+    'single_spec' : None,
+}
 
 
 infos['service'] = {

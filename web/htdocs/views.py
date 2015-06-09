@@ -2706,6 +2706,17 @@ class Datasource(elements.Element):
     def infos(self):
         return self._["infos"]
 
+    def key_columns(self):
+        columns = []
+        for info_name in self.infos():
+            columns += elements.Info.instance(info_name).key_columns()
+        return columns
+
+    # Columns that the datasource always quries and provides
+    def implicit_columns(self):
+        return self.key_columns()
+
+
     # Central method of all: fetch the actual data rows. Columns is a list
     # of column names. Returns a list of rows. Each row is a dictionary.
     # TODO: Hierbei muss das Limit berücksichtigt werden.
@@ -2722,7 +2733,6 @@ class Datasource(elements.Element):
     # source. We e.g. need this for creating links to other table views in
     # the cells of table views.
     def context_from_row(self, row, single_infos):
-        html.debug(single_infos)
         return {}
 
     # The info name of one thing in this table. e.g. "service" for the
@@ -2744,8 +2754,9 @@ class LivestatusDatasource(Datasource):
         Datasource.__init__(self, kwargs)
 
     def do_query(self, columns, context, limit=None):
+        columns = columns + self.implicit_columns()
+
         # TODO:
-        # - Implizite Spalten definieren, die aus der Info kommen und immer da sind
         # - Selektoren
         # - Additional headers
         # - Single Infos
@@ -2758,9 +2769,6 @@ class LivestatusDatasource(Datasource):
 
         if "site" in columns:
             columns.remove("site")
-            need_site = True
-        else:
-            need_site = False
 
         if "site" in context:
             only_sites = [ context["site"] ]
@@ -2769,10 +2777,10 @@ class LivestatusDatasource(Datasource):
         query = "GET %s\n" % self._["table"]
         query += "Columns: %s\n" % " ".join(columns)
         query += context.livestatus_filters()
+        query += self._.get("livestatus_headers", "")
 
         # Tell Livestatus client module to create an artificial column with the site
-        if need_site:
-            html.live.set_prepend_site(True)
+        html.live.set_prepend_site(True)
 
         if limit != None:
             html.live.set_limit(limit + 1) # + 1: We need to know, if limit is exceeded
@@ -2792,8 +2800,7 @@ class LivestatusDatasource(Datasource):
         #     data = merge_data(data, columns)
 
         # Convert lists-rows into dictionaries.
-        if need_site:
-            columns = [ "site" ] + columns
+        columns = [ "site" ] + columns
         return [ dict(zip(columns, row)) for row in data ]
 
 
@@ -2933,6 +2940,47 @@ class Painter(elements.Element):
 
 
 #.
+#   .--ViewLayouts---------------------------------------------------------.
+#   |   __     ___               _                            _            |
+#   |   \ \   / (_) _____      _| |    __ _ _   _  ___  _   _| |_ ___      |
+#   |    \ \ / /| |/ _ \ \ /\ / / |   / _` | | | |/ _ \| | | | __/ __|     |
+#   |     \ V / | |  __/\ V  V /| |__| (_| | |_| | (_) | |_| | |_\__ \     |
+#   |      \_/  |_|\___| \_/\_/ |_____\__,_|\__, |\___/ \__,_|\__|___/     |
+#   |                                       |___/                          |
+#   +----------------------------------------------------------------------+
+#   |  A view layout is a way to render tabular data, e.g. as table, as    |
+#   |  matrix, as collection of tiles, etc.                                |
+#   '----------------------------------------------------------------------'
+
+class ViewLayout(elements.Element):
+    def __init__(self, d):
+        elements.Element.__init__(self, d)
+
+    @classmethod
+    def type_name(self):
+        return "view_layout"
+
+    @classmethod
+    def phrase(self, what):
+        return {
+            "title"        : _("Table View Layout"),
+            "title_plural" : _("Table View Layouts"),
+        }
+
+    def render(self, rows, column_painters, group_painters, render_options):
+        # TODO: We wrap to the legacy interface of the layouts. We need to
+        # cleanup those.
+        view_options = render_options["view_options"]
+        self._["render"](rows, view_options, group_painters, column_painters,
+                         view_options["num_columns"], view_options["show_checkboxes"])
+
+def register_view_layout(name, d):
+    d["name"] = name
+    view_layout = ViewLayout(d)
+    ViewLayout.add_instance(name, view_layout)
+
+
+#.
 #   .--TableView-----------------------------------------------------------.
 #   |          _____     _     _    __     ___                             |
 #   |         |_   _|_ _| |__ | | __\ \   / (_) _____      _____           |
@@ -2950,7 +2998,6 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
             self._layout = ViewLayout.instance(self._["layout"])
         except:
             # TODO: Remove this exception handler
-            # html.debug("Layout %s fehlt noch. Ich verwende %s" % (self._["layout"], "table"))
             self._layout = ViewLayout.instance("table")
 
         try:
@@ -3250,47 +3297,6 @@ elements.register_element_type(TableView)
 
 # Wird entfernt
 # page_edit_view() -> try_handler   show_view(view, False, False, True)
-
-
-#.
-#   .--ViewLayouts---------------------------------------------------------.
-#   |   __     ___               _                            _            |
-#   |   \ \   / (_) _____      _| |    __ _ _   _  ___  _   _| |_ ___      |
-#   |    \ \ / /| |/ _ \ \ /\ / / |   / _` | | | |/ _ \| | | | __/ __|     |
-#   |     \ V / | |  __/\ V  V /| |__| (_| | |_| | (_) | |_| | |_\__ \     |
-#   |      \_/  |_|\___| \_/\_/ |_____\__,_|\__, |\___/ \__,_|\__|___/     |
-#   |                                       |___/                          |
-#   +----------------------------------------------------------------------+
-#   |  A view layout is a way to render tabular data, e.g. as table, as    |
-#   |  matrix, as collection of tiles, etc.                                |
-#   '----------------------------------------------------------------------'
-
-class ViewLayout(elements.Element):
-    def __init__(self, d):
-        elements.Element.__init__(self, d)
-
-    @classmethod
-    def type_name(self):
-        return "view_layout"
-
-    @classmethod
-    def phrase(self, what):
-        return {
-            "title"        : _("Table View Layout"),
-            "title_plural" : _("Table View Layouts"),
-        }
-
-    def render(self, rows, column_painters, group_painters, render_options):
-        # TODO: We wrap to the legacy interface of the layouts. We need to
-        # cleanup those.
-        view_options = render_options["view_options"]
-        self._["render"](rows, view_options, group_painters, column_painters,
-                         view_options["num_columns"], view_options["show_checkboxes"])
-
-def register_view_layout(name, d):
-    d["name"] = name
-    view_layout = ViewLayout(d)
-    ViewLayout.add_instance(name, view_layout)
 
 
 #.

@@ -26,6 +26,10 @@
 
 from lib import *
 
+g_header_open = False
+g_section_open = False
+g_section_isopen = False
+
 # A input function with the same call syntax as htmllib.textinput()
 def input(valuespec, varprefix, defvalue):
     if html.form_filled_in():

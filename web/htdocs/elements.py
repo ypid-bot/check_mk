@@ -1337,12 +1337,17 @@ class Info(Element):
             "title_plural"   : _("Infos"), # TODO: Present the user a better name for this
         }.get(what, Element.phrase(what))
 
+    def key_columns(self):
+        return self._.get("key_columns", [])
+
     def context_from_row(self, row):
         return self._["context_from_row"](row)
 
     def page_heading_prefix_for(self, selector_context):
         selector = Selector.instance(self.name())
         return selector.heading_info(selector_context)
+
+
 
 
 register_element_type(Info)
@@ -1563,8 +1568,6 @@ class Context(Element):
         headers = ""
         for selector_name, selector_context in self._.items():
             if not Selector.has_instance(selector_name):
-                # html.debug("MIST: Selektor %s fehlt." % selector_name)
-                # html.debug(("ALLE:", Selector.instances_dict()))
                 pass
             else:
                 selector = Selector.instance(selector_name)

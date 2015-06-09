@@ -120,6 +120,36 @@ register_datasource(
     )
 )
 
+register_datasource(
+    LivestatusDatasource(
+      name               = "log",
+      title              = _("Monitoring logfile"),
+      description        = _("Table of all historic monitoring events"),
+      table              = "log",
+      infos              = [ "log", "host", "service", "contact", "command" ],
+))
+
+register_datasource(
+    LivestatusDatasource(
+      name               = "log_events",
+      title              = _("Monitoring events of hosts and services"),
+      description        = _("Historic monitoring events concerning a host or service"),
+      table              = "log",
+      infos              = [ "log", "host", "service", ],
+      livestatus_headers = "Filter: class = 1\nFilter: class = 3\nOr: 2\n",
+))
+
+register_datasource(
+    LivestatusDatasource(
+      name               = "log_host_events",
+      title              = _("Monitoring events of hosts"),
+      description        = _("Historic monitoring events concerning a host"),
+      table              = "log",
+      infos              = [ "log", "host", ],
+      livestatus_headers = "Filter: class = 1\nFilter: class = 3\nOr: 2\nFilter: service_description = \n",
+))
+
+
 multisite_datasources["hostsbygroup"] = {
     "title"   : _("Hosts grouped by host groups"),
     "table"   : "hostsbygroup",

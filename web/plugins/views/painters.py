@@ -2027,6 +2027,7 @@ multisite_painters["log_command"] = {
     "paint"   : lambda row: ("nowrap", row["log_command_name"]),
 }
 def paint_log_icon(row):
+    html.debug(row)
     img = None
     log_type = row["log_type"]
     if log_type == "SERVICE ALERT":
