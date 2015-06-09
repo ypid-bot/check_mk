@@ -116,7 +116,7 @@ register_datasource(
         title       = _("Services"),
         description = _("Table of all monitored services"),
         table       = "services",
-        infos       = [ "host", "service" ],
+        infos       = [ "service", "host" ], # object type must be first!
     )
 )
 

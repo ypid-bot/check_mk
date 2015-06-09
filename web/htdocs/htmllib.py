@@ -1108,11 +1108,6 @@ class html:
             self.write(text.strip())
             self.write('</div>')
 
-    def do_actions(self):
-        # TODO: Das hat hier nix verloren. Entfernen, sobald alles
-        # auf elements.py imgestellt ist.
-        return self.var("_do_actions") not in [ "", None, _("No") ]
-
     def set_focus(self, varname):
         self.focus_object = (self.form_name, varname)
 
@@ -1326,6 +1321,12 @@ class html:
         else:
             # Now check the transaction
             return self.check_transaction() and True or None # True: "Yes", None --> Browser reload of "yes" page
+
+    def do_actions(self):
+        # TODO: Das hat hier nix verloren. Entfernen, sobald alles
+        # auf elements.py imgestellt ist. Oder braucht man das im Zusammenhang
+        # mit confirm??
+        return self.var("_do_actions") not in [ "", None, _("No") ]
 
     def register_event(self, name):
         self.events.add(name)

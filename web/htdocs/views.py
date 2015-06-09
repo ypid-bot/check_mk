@@ -1994,7 +1994,22 @@ def core_command(what, row, row_nr, total_rows):
     if type(commands) != list:
         commands = [commands]
 
-    return commands, title, executor
+    # Some command functions return the information about the site per-command (e.g. for BI)
+    # For others we add that ourselves. Also convert to UTF-8.
+    commands_with_site = []
+    for command_entry in commands:
+        if type(command_entry) == tuple:
+            site, command = command_entry
+        else:
+            site = row["site"]
+            command = command_entry
+
+        if type(command) == unicode:
+            command = command.encode("utf-8")
+
+        commands_with_site.append((site, command))
+
+    return commands_with_site, title, executor
 
 
 def command_executor_livestatus(command, site):
@@ -2710,7 +2725,14 @@ class Datasource(elements.Element):
         html.debug(single_infos)
         return {}
 
+    # The info name of one thing in this table. e.g. "service" for the
+    # datasource "servicebyhostgroup"
+    def object_type(self):
+        return self._["infos"][0]
 
+    # The name of one thing in this table, e.g. host, services, event, ...
+    def object_type_title(self):
+        return _(self._["infos"][0])
 
 
 
@@ -3002,6 +3024,7 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
         # - Columns of selectors (we need the context therefore)
         return columns
 
+
     # Renders a view in HTML.
     # TODO: Warum ist dieser Code eigentlich nicht in page renderer???
     # Oder in ContextAwarePageRenderer?
@@ -3010,41 +3033,74 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
         self.render_buttons(context, render_options)
         self.render_page_links(context, render_options, is_open=False) # Move to PageRenderer?
         self.render_selectors_form(context, render_options, is_open=False) # TODO: Move to ContextAwarePageRenderer
-        # Problem: vor dem Malen des Formulars muss ich bereits die Validierung
-        # gemacht haben!
-        if not self.handle_commands(context, render_options):
-            self.render_html_table(context, render_options)
+        rows = self.query_rows(context)
+        if rows:
+            self.handle_commands(rows)
+            self.render_rows(rows, render_options)
         self.render_html_footer(render_options)
 
-    def handle_commands(self, context, render_options):
-        # Es gibt vier Phasen
-        # 1. nix, None, normal oder confirm negativ
-        # 2a. Erster Druck auf Aktion plus Validierungsfehler
-        # 2b. Erster Druck auf Aktion ohne Fehler -> confirm
-        # 3. Confirm positiv -> ausführen
-        # 4. Confirm negativ -> abbrechen
-        # bei 1+2a+3 wird die View normal angezeigt
-        # bei drei werden nur die gewählen rows angezeigt
-        commands = self.commands_to_be_executed(context, render_options)
-        self.render_commands_form(context, render_options, is_open=True) # False)
-        if not commands:
-        if not self.user_wants_commands():
-            return False
-        if
-        phase = self.command_phase()
-        html.debug(phase)
-        self.render_commands_form(context, render_options, is_open=True) # False)
-        # self.do_commands()
 
-    def render_commands_form(self, context, render_options, is_open):
+    def handle_commands(self, rows):
+        if html.transaction_valid() and html.var("actions") == "yes":
+            self.remove_unchecked_rows(rows)
+            commands_to_execute = self.prepare_commands(rows)
+            self.render_commands_form(is_open = html.has_user_errors())
+            if commands_to_execute and \
+                self.user_confirms_command_execution(rows, commands_to_execute):
+                self.execute_commands(commands_to_execute)
+        else:
+            self.render_commands_form(is_open = False)
+
+
+    def prepare_commands(self, rows):
+        what = self.datasource().object_type()
+        monitoring_commands = set([])
+        for nr, row in enumerate(rows):
+            try:
+                new_commands, title, executor = core_command(what, row, nr, len(rows))
+            except MKUserError, e:
+                html.show_error(e)
+                html.add_user_error(e.varname, e.message)
+                return None
+            monitoring_commands.update(new_commands)
+        return sorted(list(monitoring_commands)), title, executor
+
+
+    def user_confirms_command_execution(self, rows, commands_to_execute):
+        commands, title, executor = commands_to_execute
+        message = "<h1>%s</h1><table><tr><td>%s:</td><td>%s</td></tr><tr><td>%s:</td><td>%s</td></tr><tr><td>%s:</td><td>%d</td></tr></table>" % (
+
+                      _("Do you really want to execute the following commands?"),
+                      _("Command"),
+                      title,
+                      _("Type of object"),
+                      self.datasource().object_type_title(),
+                      _("Number of objects"),
+                      len(rows))
+                      
+        return html.confirm(message)
+
+
+    def execute_commands(self, commands_to_execute):
+        commands, title, executor = commands_to_execute
+        for command_entry in commands:
+            site, command = command_entry
+            executor(command, site)
+        message = _("Executed %d commands.") % len(commands)
+        if config.debug:
+            message += _("The last one was: <pre>%s</pre>") % command
+        html.message(message)
+
+
+    def remove_unchecked_rows(self, rows):
+        # TODO: handle check boxes here
+        return
+
+
+    def render_commands_form(self, is_open):
         # TODO: Hier eine eigene Funktion draus machen und in die eigene Klasse
         # übernehmen.
         show_command_form(is_open, self.datasource())
-
-    def user_wants_commands(self):
-        return html.var("_do_actions") == "yes" and \
-            html.transaction_valid()
-        # TODO: confirm negativ
 
     def render_html_header(self, context, render_options):
         heading = context.page_heading_prefix()
@@ -3069,9 +3125,12 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
             icon = "commands",
             is_open = False)
 
-    def render_html_table(self, context, render_options):
+    def query_rows(self, context):
         columns = sorted(list(self.required_columns()))
         rows = self.datasource().query(columns, context)
+        return rows
+
+    def render_rows(self, rows, render_options):
         self.layout().render(rows, self.column_painters(), self.group_painters(), render_options)
 
     def render_html_footer(self, render_options):
@@ -3250,7 +3309,8 @@ def register_view_layout(name, d):
 # - Kontextbuttons zu anderen Views besser layouten
 # - Buttons Export as PDF, CSV und so Zeug
 # - Limit
-# - Kommandos
+# - Checkboxen für die Kommandos
+# - Manche Kommandos brauchen bestimmte Columns. Diese immer holen.
 # - Selektoren nicht immer anzeigen, dafür aber Knopf zum Hinzufügen.
 #   Gut wäre, wenn alle einfach da, aber hidden sind. Dann kann man sie
 #   per JS einblenden. Beim Malen müssen die Selektoren wissen, ob sie
@@ -3262,7 +3322,6 @@ def register_view_layout(name, d):
 # - Join Columns
 # - Column Tooltips
 # - Painter options anzeigen
-# - Checkboxen
 # - Inventory-Daten mit Filtern und Columns
 # - display_options müssen wieder wirken
 # - Site hint

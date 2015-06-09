@@ -769,8 +769,25 @@ div.really h1, div.success h1, div.error h1, div.message h1, div.warning h1 {
      margin-left: 0px;
 }
 
-div.really, div.success {
+div.really, div.really h1, div.success, div.success h1 {
     color: black;
+}
+
+div.really table {
+    margin: 0px;
+    border-spacing: 0px;
+}
+
+div.really table td {
+    padding: 2px 0px;
+}
+
+div.really table td:first-child {
+    padding-right: 10px;
+}
+
+div.really table td:last-child {
+    font-weight: bold;
 }
 
 form.confirm {
