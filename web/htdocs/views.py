@@ -1911,8 +1911,8 @@ def show_command_form(is_open, datasource):
     html.write('<div class="view_form" id="commands" %s>' %
                 (not is_open and 'style="display: none"' or '') )
     html.begin_form("actions")
-    html.hidden_field("_do_actions", "yes")
-    html.hidden_field("actions", "yes")
+    html.hidden_field("_do_actions", "yes") # Haeh?
+    html.hidden_field("actions", "yes") # What?
     html.hidden_fields() # set all current variables, exception action vars
 
     # Show command forms, grouped by (optional) command group
@@ -3008,12 +3008,43 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
     def render_html_page(self, context, render_options):
         self.render_html_header(context, render_options)
         self.render_buttons(context, render_options)
-        self.render_page_links(context, render_options, is_open=False)
-        self.render_commands_form(context, render_options, is_open=False)
-        self.do_commands()
+        self.render_page_links(context, render_options, is_open=False) # Move to PageRenderer?
         self.render_selectors_form(context, render_options, is_open=False) # TODO: Move to ContextAwarePageRenderer
-        self.render_html_table(context, render_options)
+        # Problem: vor dem Malen des Formulars muss ich bereits die Validierung
+        # gemacht haben!
+        if not self.handle_commands(context, render_options):
+            self.render_html_table(context, render_options)
         self.render_html_footer(render_options)
+
+    def handle_commands(self, context, render_options):
+        # Es gibt vier Phasen
+        # 1. nix, None, normal oder confirm negativ
+        # 2a. Erster Druck auf Aktion plus Validierungsfehler
+        # 2b. Erster Druck auf Aktion ohne Fehler -> confirm
+        # 3. Confirm positiv -> ausführen
+        # 4. Confirm negativ -> abbrechen
+        # bei 1+2a+3 wird die View normal angezeigt
+        # bei drei werden nur die gewählen rows angezeigt
+        commands = self.commands_to_be_executed(context, render_options)
+        self.render_commands_form(context, render_options, is_open=True) # False)
+        if not commands:
+        if not self.user_wants_commands():
+            return False
+        if
+        phase = self.command_phase()
+        html.debug(phase)
+        self.render_commands_form(context, render_options, is_open=True) # False)
+        # self.do_commands()
+
+    def render_commands_form(self, context, render_options, is_open):
+        # TODO: Hier eine eigene Funktion draus machen und in die eigene Klasse
+        # übernehmen.
+        show_command_form(is_open, self.datasource())
+
+    def user_wants_commands(self):
+        return html.var("_do_actions") == "yes" and \
+            html.transaction_valid()
+        # TODO: confirm negativ
 
     def render_html_header(self, context, render_options):
         heading = context.page_heading_prefix()
@@ -3037,26 +3068,6 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
             div_id = "commands",
             icon = "commands",
             is_open = False)
-
-    def render_commands_form(self, context, render_options, is_open):
-        # TODO: Hier eine eigene Funktion draus machen und in die eigene Klasse
-        # übernehmen.
-        show_command_form(is_open, self.datasource())
-
-    # Kommandos haben (aktuell) folgende Phasen:
-    # - None - Keine Aktionen, nur Anzeigen der Tabelle
-    # - "complain" - Benutzerdaten sind nicht vollständig oder falsch
-    # - "confirm" - Wollen Sie wirklich ...
-    # - "actions" - Wirklich ausführen, oder Fehler anzeigen
-    def do_commands(self):
-        phase = self.command_phase()
-
-    def command_phase(self):
-        if self.var("_do_actions") in [ "", None, _("No") ]:
-            return None
-        if not html.transaction_valid():
-            return None
-        return "confirm"
 
     def render_html_table(self, context, render_options):
         columns = sorted(list(self.required_columns()))
@@ -3265,5 +3276,6 @@ def register_view_layout(name, d):
 #   - Wenn die Kommandos ausgeführt sind, könnten wir den Ergebnisschirm einfach
 #     auslassen und das Ergebnis als Kasten über der View anzeigen. Frage ist noch,
 #     wie wir mit dieser Auswahlmöglichkeit mit den Checkboxen vorgehen.
-#   - Diese komische row-selection muss auch aufgeräumt werden. 
+#   - Diese komische row-selection muss auch aufgeräumt werden.
+# - Kontrollieren, ob Kommandos per Webservice noch funktionieren (z.B. downtime-Skript)
 # ...
