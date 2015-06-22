@@ -101,7 +101,7 @@ multisite_datasources["hosts"] = {
 }
 
 register_datasource(
-    LivestatusDatasource(
+    LivestatusHostDatasource(
         name        = "hosts",
         title       = _("Hosts"),
         description = _("Table of all monitored hosts"),
@@ -111,7 +111,7 @@ register_datasource(
 )
 
 register_datasource(
-    LivestatusDatasource(
+    LivestatusHostDatasource(
         name        = "services",
         title       = _("Services"),
         description = _("Table of all monitored services"),
@@ -121,7 +121,7 @@ register_datasource(
 )
 
 register_datasource(
-    LivestatusDatasource(
+    LivestatusHostDatasource(
       name               = "log",
       title              = _("Monitoring logfile"),
       description        = _("Table of all historic monitoring events"),
@@ -130,7 +130,7 @@ register_datasource(
 ))
 
 register_datasource(
-    LivestatusDatasource(
+    LivestatusHostDatasource(
       name               = "log_events",
       title              = _("Monitoring events of hosts and services"),
       description        = _("Historic monitoring events concerning a host or service"),
@@ -140,7 +140,7 @@ register_datasource(
 ))
 
 register_datasource(
-    LivestatusDatasource(
+    LivestatusHostDatasource(
       name               = "log_host_events",
       title              = _("Monitoring events of hosts"),
       description        = _("Historic monitoring events concerning a host"),

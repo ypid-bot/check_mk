@@ -67,8 +67,7 @@ def declare_inv_column(invpath, datatype, title, short = None):
     # Declare column painter
     multisite_painters[name] = {
         "title"    : invpath == "." and _("Inventory Tree") or (_("Inventory") + ": " + title),
-        "columns"  : [],
-        "load_inv" : True,
+        "columns"  : [ "host_inventory" ],
         "paint"    : lambda row: paint_host_inventory(row, invpath),
         "sorter"   : name,
     }
@@ -80,8 +79,7 @@ def declare_inv_column(invpath, datatype, title, short = None):
         # Declare sorter. It will detect numbers automatically
         multisite_sorters[name] = {
             "title"    : _("Inventory") + ": " + title,
-            "columns"  : [],
-            "load_inv" : True,
+            "columns"  : [ "host_inventory" ],
             "cmp"      : lambda a, b: cmp_inventory_node(a, b, invpath),
         }
 
@@ -367,8 +365,7 @@ def inv_titleinfo_long(invpath, node):
 
 multisite_painters["inventory_tree"] = {
     "title"    : _("Hardware & Software Tree"),
-    "columns"  : [],
-    "load_inv" : True,
+    "columns"  : [ "host_inventory" ],
     "paint"    : paint_inv_tree,
 }
 
@@ -807,7 +804,7 @@ def declare_invtable_view(infoname, invpath, title_singular, title_plural):
     filters = []
     for name in inv_find_subtable_columns(invpath):
         column = infoname + "_" + name
-        painters.append( ( column, '', '' ) )
+        painters.append( ( column, None ) )
         filters.append(column)
 
     # Declare two views: one for searching globally. And one
@@ -839,7 +836,7 @@ def declare_invtable_view(infoname, invpath, title_singular, title_plural):
         'mustsearch'                   : True,
 
         # Columns
-        'painters'                     : [ ('host','inv_host', '') ] + painters,
+        'painters'                     : [ ('host', 'inv_host') ] + painters,
 
         # Filters
         'show_filters'                 : [
@@ -924,8 +921,8 @@ multisite_builtin_views["inv_host"] = {
     # Columns
     'group_painters'               : [],
     'painters'                     : [
-            ('host',           'host', ''),
-            ('inv',            None,   ''),
+            ('host',           'host', ),
+            ('inv',            None,   ),
     ],
 
     # Filters
@@ -963,13 +960,13 @@ multisite_builtin_views["inv_hosts_cpu"] = {
     # Columns
     'group_painters'               : [],
     'painters'                     : [
-         ('host',                       'inv_host', ''),
-         ('inv_software_os_name',       None,   ''),
-         ('inv_hardware_cpu_cpus',      None,   ''),
-         ('inv_hardware_cpu_cores',     None,   ''),
-         ('inv_hardware_cpu_max_speed', None,   ''),
-         ('perfometer',                 None, '', 'CPU load'),
-         ('perfometer',                 None, '', 'CPU utilization'),
+         ('host',                       'inv_host'),
+         ('inv_software_os_name',       None,     ),
+         ('inv_hardware_cpu_cpus',      None,     ),
+         ('inv_hardware_cpu_cores',     None,     ),
+         ('inv_hardware_cpu_max_speed', None,     ),
+         ('perfometer',                 None,       None, 'CPU load'),
+         ('perfometer',                 None,       None, 'CPU utilization'),
 
     ],
 
@@ -1015,11 +1012,11 @@ multisite_builtin_views["inv_hosts_ports"] = {
     # Columns
     'group_painters'               : [],
     'painters'                     : [
-         ('host',                       'invinterface_of_host', ''),
-         ('inv_hardware_system_product',             None, ''),
-         ('inv_networking_total_interfaces',         None, ''),
-         ('inv_networking_total_ethernet_ports',     None, ''),
-         ('inv_networking_available_ethernet_ports', None, ''),
+         ('host',                       'invinterface_of_host'),
+         ('inv_hardware_system_product',             None),
+         ('inv_networking_total_interfaces',         None),
+         ('inv_networking_total_ethernet_ports',     None),
+         ('inv_networking_available_ethernet_ports', None),
     ],
 
     # Filters
@@ -1155,11 +1152,11 @@ multisite_builtin_views["inv_host_history"] = {
     # Columns
     'group_painters'               : [],
     'painters'                     : [
-            ('invhist_time',     None,   ''),
-            ('invhist_removed',  None,   ''),
-            ('invhist_new',      None,   ''),
-            ('invhist_changed',  None,   ''),
-            ('invhist_delta',    None,   ''),
+            ('invhist_time',     None),
+            ('invhist_removed',  None),
+            ('invhist_new',      None),
+            ('invhist_changed',  None),
+            ('invhist_delta',    None),
     ],
 
     # Filters

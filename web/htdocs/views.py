@@ -2770,6 +2770,8 @@ class LivestatusDatasource(Datasource):
         if "site" in columns:
             columns.remove("site")
 
+        columns = list(set(columns))
+
         if "site" in context:
             only_sites = [ context["site"] ]
             html.live.set_only_sites(only_sites)
@@ -2802,6 +2804,19 @@ class LivestatusDatasource(Datasource):
         # Convert lists-rows into dictionaries.
         columns = [ "site" ] + columns
         return [ dict(zip(columns, row)) for row in data ]
+
+# Special case for table containing host data: add inventory information
+class LivestatusHostDatasource(LivestatusDatasource):
+    def __init__(self, **kwargs):
+        LivestatusDatasource.__init__(self, **kwargs)
+        self._datasource = LivestatusDatasource(**kwargs)
+
+    def do_query(self, columns, context, limit=None):
+        rows = self._datasource.query(columns, context, limit)
+        if "host_inventory" in columns:
+            for row in rows:
+                row["host_inventory"] = inventory.host(row["host_name"])
+        return rows
 
 
 def register_datasource(datasource):
@@ -2846,7 +2861,16 @@ class PainterType(elements.Element):
     def create_painter_from_spec(self, spec):
         painter_type_name = spec[0]
         painter_type = self.instance(painter_type_name)
-        return painter_type.create_painter(spec[1:])
+        painter = painter_type.create_painter(spec[1:])
+        if len(spec) >= 4:
+            join_column = spec[3]
+            if len(spec) >= 5:
+                join_title = spec[4]
+            else:
+                join_title = None
+            return JoinPainter(painter, join_column, join_title)
+        else:
+            return painter
 
     @classmethod
     def create_painter_from_name(self, name):
@@ -2855,7 +2879,6 @@ class PainterType(elements.Element):
 
     def create_painter(self, spec):
         return Painter(self._, spec)
-
 
 elements.register_element_type(PainterType)
 
@@ -2879,21 +2902,56 @@ def declare_painter_type(painter_type):
 
 # TODO: Subclass PainterWithArgs
 
-class Painter(elements.Element):
-    def __init__(self, d, spec):
-        if "args" in d:
-            raise MKGeneralException("TODO: Implement painter with arguments for %s" % d["name"])
+# MIST: Ich muss hier aufräumen. Wo kommt der Tooltip-Painter rein?
 
+class Painter(elements.Element):
+    def __init__(self, tooltip_painter):
         elements.Element.__init__(self, d)
-        self._link_view_name = spec[0]
-        if len(spec) >= 2:
-            self._tooltip_painter = PainterType.create_painter_from_name(spec[1])
-        else:
-            self._tooltip_painter = None
+        self._tooltip_painter = tooltip_painter
 
     @classmethod
     def type_name(self):
         return "painter"
+
+    @mandatory
+    def paint(self, row):
+        pass
+
+    def get_tdclass_and_content(self, row):
+        # TODO: Join columns must be handled in JoinPainters
+        # row = join_row(row, p)
+
+        tdclass, content = self.paint(row)
+        if tdclass == "" and content == "":
+            return tdclass, content
+
+        content = html.utf8_to_entities(content)
+
+        # Create contextlink to other view
+        if content and self._link_view_name:
+            url = TableView.get_url_to_page_for_row("table_view", self._link_view_name, row)
+            content = '<a href="%s">%s</a>' % (url, content)
+
+        # Tooltip
+        if content != '' and self._tooltip_painter:
+            cla, tooltip_text = self._tooltip_painter.get_tdclass_and_content(row)
+            content = '<span title="%s">%s</span>' % (tooltip_text, content)
+        return tdclass, content
+
+
+class DictPainter(Painter):
+    def __init__(self, d, spec):
+        if "args" in d:
+            raise MKGeneralException("TODO: Implement painter with arguments for %s" % d["name"])
+
+        self._link_view_name = spec[0]
+        if len(spec) >= 2:
+            tooltip_painter = PainterType.create_painter_from_name(spec[1])
+        else:
+            tooltip_painter = None
+
+        Painter.__init__(self, tooltip_painter)
+
 
     def paint(self, row):
         return self._["paint"](row)
@@ -2917,26 +2975,34 @@ class Painter(elements.Element):
         else:
             return [ row[c] for c in self.required_columns() ]
 
-    def get_tdclass_and_content(self, row):
-        # TODO: Join columns must be handled in JoinPainters
-        # row = join_row(row, p)
 
-        tdclass, content = self._["paint"](row)
-        if tdclass == "" and content == "":
-            return tdclass, content
 
-        content = html.utf8_to_entities(content)
+class JoinPainter(Painter):
+    def __init__(self, join_painter, join_column, join_title=None):
+        self._painter = join_painter
 
-        # Create contextlink to other view
-        if content and self._link_view_name:
-            url = TableView.get_url_to_page_for_row("table_view", self._link_view_name, row)
-            content = '<a href="%s">%s</a>' % (url, content)
+    def paint(self, row):
+        return self._["paint"](row)
 
-        # Tooltip
-        if content != '' and self._tooltip_painter:
-            cla, tooltip_text = self._tooltip_painter.get_tdclass_and_content(row)
-            content = '<span title="%s">%s</span>' % (tooltip_text, content)
-        return tdclass, content
+    def required_columns(self):
+        if self._tooltip_painter:
+            return self._tooltip_painter.required_columns() + self._["columns"]
+        else:
+            return self._["columns"]
+
+    def get_column_header(self):
+        return self._.get("short", self.title())
+
+    def get_long_column_header(self):
+        return self.title()
+
+    def get_group_value(self, row):
+        groupvalfunc = self._.get("groupby")
+        if groupvalfunc:
+            return [ groupvalfunc(row), ]
+        else:
+            return [ row[c] for c in self.required_columns() ]
+
 
 
 #.
@@ -3311,17 +3377,14 @@ elements.register_element_type(TableView)
 #   | Kommentarsektion, was noch alles fehlt                               |
 #   '----------------------------------------------------------------------'
 
+# MUSS
 # - Sortieren von Spalten
 # - Kontextbuttons zu anderen Views besser layouten
 # - Buttons Export as PDF, CSV und so Zeug
 # - Limit
 # - Checkboxen für die Kommandos
 # - Manche Kommandos brauchen bestimmte Columns. Diese immer holen.
-# - Selektoren nicht immer anzeigen, dafür aber Knopf zum Hinzufügen.
-#   Gut wäre, wenn alle einfach da, aber hidden sind. Dann kann man sie
-#   per JS einblenden. Beim Malen müssen die Selektoren wissen, ob sie
-#   aktiv sind und nur dann direkt angezeigt werden. Man könnte auch
-#   ein paar "prominente" Filter immer anzeigen.
+# - Dass alle Selektoren gehen
 # - Dass alle Layouts gehen (fehlt noch Tiled, Matrix, Mobile...)
 # - Dass alle Views gehen
 # - Dass alle Datasources gehen
@@ -3344,3 +3407,11 @@ elements.register_element_type(TableView)
 #   - Diese komische row-selection muss auch aufgeräumt werden.
 # - Kontrollieren, ob Kommandos per Webservice noch funktionieren (z.B. downtime-Skript)
 # ...
+
+# SCHÖNER
+# - Selektoren nicht immer anzeigen, dafür aber Knopf zum Hinzufügen.
+#   Gut wäre, wenn alle einfach da, aber hidden sind. Dann kann man sie
+#   per JS einblenden. Beim Malen müssen die Selektoren wissen, ob sie
+#   aktiv sind und nur dann direkt angezeigt werden. Man könnte auch
+#   ein paar "prominente" Filter immer anzeigen.
+
