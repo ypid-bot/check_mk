@@ -2812,11 +2812,75 @@ class LivestatusHostDatasource(LivestatusDatasource):
         self._datasource = LivestatusDatasource(**kwargs)
 
     def do_query(self, columns, context, limit=None):
-        rows = self._datasource.query(columns, context, limit)
+        host_columns, required_services, required_service_columns = self.split_columns_into_host_and_joins(columns)
+
+        rows = self._datasource.query(host_columns, context, limit)
         if "host_inventory" in columns:
             for row in rows:
                 row["host_inventory"] = inventory.host(row["host_name"])
+
+        if required_services:
+            self.add_service_information_to_rows(rows, required_services, required_service_columns)
         return rows
+
+
+    def split_columns_into_host_and_joins(self, columns):
+        host_columns = set([])
+        required_services = []
+        required_service_columns = set([])
+        for column in columns:
+            if type(column) == tuple:
+                service_description, required_columns = column
+                required_services.append(service_description)
+                required_service_columns.update(required_columns)
+                host_columns.add("host_name")
+            else:
+                host_columns.add(column)
+
+        return list(host_columns), required_services, list(required_service_columns)
+
+
+    def add_service_information_to_rows(self, rows, required_services, required_service_columns):
+        query = "GET services\n" \
+                "Columns: host_name service_description %s\n" % " ".join(required_service_columns)
+
+        # Select services
+        for service_description in required_services:
+            query += "Filter: service_description = %s\n" % service_description
+        query += "Or: %d\n" % len(required_services)
+
+        # Limit to hosts
+        only_sites = set([])
+        for row in rows:
+            query += "Filter: host_name = %s\n" % row["host_name"]
+            only_sites.add(row["site"])
+
+        # Fetch data via Livestatus, only from relevant sites
+        only_sites = list(only_sites)
+        if only_sites == [ None ]:
+            only_sites = None
+        html.live.set_prepend_site(True)
+        html.live.set_only_sites(only_sites)
+        data = html.live.query(query)
+        html.live.set_only_sites(None)
+        html.live.set_prepend_site(False)
+
+        # Create a lookup table from site/host to found services
+        by_host = {}
+        headers = [ "site", "host_name", "service_description" ] + required_service_columns
+        for entry in data:
+            row = dict(zip(headers, entry))
+            site_host = (row["site"], row["host_name"])
+            service_description = row["service_description"]
+            by_host.setdefault(site_host, {})[service_description] = row
+
+        # Add service information to rows
+        for row in rows:
+            site_host = (row["site"], row["host_name"])
+            join = row.setdefault("JOIN", {})
+            for service_description, service_row in by_host.get(site_host, {}).items():
+                join[service_description] = service_row
+
 
 
 def register_datasource(datasource):
@@ -2842,85 +2906,28 @@ def get_datasource(datasource_name):
 #   |  In most cases each column corresponds to one specific painter type. |
 #   '----------------------------------------------------------------------'
 
-class PainterType(elements.Element):
-    def __init__(self, d):
-        elements.Element.__init__(self, d)
-
-    @classmethod
-    def type_name(self):
-        return "painter_type"
-
-    @classmethod
-    def phrase(self, what):
-        return {
-            "title"          : _("Column"),
-            "title_plural"   : _("Columns"),
-        }[what]
-
-    @classmethod
-    def create_painter_from_spec(self, spec):
-        painter_type_name = spec[0]
-        painter_type = self.instance(painter_type_name)
-        painter = painter_type.create_painter(spec[1:])
-        if len(spec) >= 4:
-            join_column = spec[3]
-            if len(spec) >= 5:
-                join_title = spec[4]
-            else:
-                join_title = None
-            return JoinPainter(painter, join_column, join_title)
-        else:
-            return painter
-
-    @classmethod
-    def create_painter_from_name(self, name):
-        painter_type = self.instance(name)
-        return painter_type.create_painter((None,))
-
-    def create_painter(self, spec):
-        return Painter(self._, spec)
-
-elements.register_element_type(PainterType)
-
-# Convert legacy style painters into the new class form
-
-def declare_painter_type(painter_type):
-    PainterType.add_instance(painter_type.name(), painter_type)
-
-#.
-#   .--Painter-------------------------------------------------------------.
-#   |                 ____       _       _                                 |
-#   |                |  _ \ __ _(_)_ __ | |_ ___ _ __ ___                  |
-#   |                | |_) / _` | | '_ \| __/ _ \ '__/ __|                 |
-#   |                |  __/ (_| | | | | | ||  __/ |  \__ \                 |
-#   |                |_|   \__,_|_|_| |_|\__\___|_|  |___/                 |
-#   |                                                                      |
-#   +----------------------------------------------------------------------+
-#   | A painter converts entries of a row in printable HTML code for a     |
-#   | table view.                                                          |
-#   '----------------------------------------------------------------------'
-
-# TODO: Subclass PainterWithArgs
-
-# MIST: Ich muss hier aufräumen. Wo kommt der Tooltip-Painter rein?
-
-class Painter(elements.Element):
-    def __init__(self, tooltip_painter):
-        elements.Element.__init__(self, d)
+class Painter:
+    def __init__(self, link_view_name, tooltip_painter):
+        self._link_view_name = linkview_name
         self._tooltip_painter = tooltip_painter
-
-    @classmethod
-    def type_name(self):
-        return "painter"
 
     @mandatory
     def paint(self, row):
         pass
 
-    def get_tdclass_and_content(self, row):
-        # TODO: Join columns must be handled in JoinPainters
-        # row = join_row(row, p)
+    @mandatory
+    def required_columns(self):
+        pass
 
+    @mandatory
+    def get_column_header(self):
+        pass
+
+    @mandatory
+    def get_long_column_header(self):
+        pass
+
+    def get_tdclass_and_content(self, row):
         tdclass, content = self.paint(row)
         if tdclass == "" and content == "":
             return tdclass, content
@@ -2939,47 +2946,63 @@ class Painter(elements.Element):
         return tdclass, content
 
 
-class DictPainter(Painter):
-    def __init__(self, d, spec):
-        if "args" in d:
-            raise MKGeneralException("TODO: Implement painter with arguments for %s" % d["name"])
+class PainterType(elements.Element):
+    def __init__(self, d):
+        elements.Element.__init__(self, d)
 
-        self._link_view_name = spec[0]
-        if len(spec) >= 2:
-            tooltip_painter = PainterType.create_painter_from_name(spec[1])
+    @classmethod
+    def type_name(self):
+        return "painter_type"
+
+    @classmethod
+    def phrase(self, what):
+        return {
+            "title"          : _("Column"),
+            "title_plural"   : _("Columns"),
+        }[what]
+
+    @classmethod
+    def create_painter_from_spec(self, spec):
+        # Plain painters:        ( painter_name, )
+        # Plain painters:        ( painter_name, link_view_name, )
+        # Plain painters:        ( painter_name, link_view_name, tooltip_painter )
+        # host-service-painters: ( painter_name, link_view_name, tooltip_painter, service_descr, (?.title.?) )
+        while len(spec) < 3:
+            spec += (None,)
+        painter_type_name, link_view_name, tooltip_painter_name = spec[:3]
+        painter_type = self.instance(painter_type_name)
+
+        # Add tooltip painter if specified
+        if tooltip_painter_name:
+            tooltip_painter = self.create_painter_from_spec((tooltip_painter_name, None, None))
         else:
             tooltip_painter = None
 
-        Painter.__init__(self, tooltip_painter)
+        # Finally create painter object
+        painter = painter_type.create_painter(link_view_name, tooltip_painter)
+
+        # In case of service-in-host-view-columns wrap painter in HostServicePainter
+        if len(spec) >= 4:
+            painter = HostServicePainter(painter, *(spec[3:]))
+
+        return painter
+
+    def create_painter(self, link_view_name, tooltip_painter):
+        return PlainPainter(self._, link_view_name, tooltip_painter)
 
 
-    def paint(self, row):
-        return self._["paint"](row)
+elements.register_element_type(PainterType)
 
-    def required_columns(self):
-        if self._tooltip_painter:
-            return self._tooltip_painter.required_columns() + self._["columns"]
-        else:
-            return self._["columns"]
-
-    def get_column_header(self):
-        return self._.get("short", self.title())
-
-    def get_long_column_header(self):
-        return self.title()
-
-    def get_group_value(self, row):
-        groupvalfunc = self._.get("groupby")
-        if groupvalfunc:
-            return [ groupvalfunc(row), ]
-        else:
-            return [ row[c] for c in self.required_columns() ]
+def declare_painter_type(painter_type):
+    PainterType.add_instance(painter_type.name(), painter_type)
 
 
-
-class JoinPainter(Painter):
-    def __init__(self, join_painter, join_column, join_title=None):
-        self._painter = join_painter
+# Normal painters for hosts, services, etc., selectable by users
+class PlainPainter(Painter):
+    def __init__(self, declaration_dict, link_view_name, tooltip_painter):
+        self._ = declaration_dict
+        self._link_view_name = link_view_name
+        self._tooltip_painter = tooltip_painter
 
     def paint(self, row):
         return self._["paint"](row)
@@ -2991,10 +3014,10 @@ class JoinPainter(Painter):
             return self._["columns"]
 
     def get_column_header(self):
-        return self._.get("short", self.title())
+        return self._.get("short", self.get_long_column_header())
 
     def get_long_column_header(self):
-        return self.title()
+        return self._["title"]
 
     def get_group_value(self, row):
         groupvalfunc = self._.get("groupby")
@@ -3002,6 +3025,44 @@ class JoinPainter(Painter):
             return [ groupvalfunc(row), ]
         else:
             return [ row[c] for c in self.required_columns() ]
+
+
+
+# Painter constructed by other painters: Service column in host view
+class HostServicePainter(Painter):
+    def __init__(self, painter, service_description, column_title=None):
+        self._painter = painter
+        self._service_description = service_description
+        self._column_title = column_title or service_description
+
+    def get_tdclass_and_content(self, row):
+        service_row = row["JOIN"].get(self._service_description)
+        if service_row:
+            return self._painter.get_tdclass_and_content(service_row)
+        else:
+            return "", "" # service missing for this host
+
+    def required_columns(self):
+        host_columns = [ "host_name" ]
+        service_columns = self._painter.required_columns()
+        # Encode JOIN columns as ( SERVICE_DESC, TUPLE_OF_SERVICE_COLUMNS )
+        return host_columns + [ (self._service_description, tuple(service_columns)) ]
+
+    def get_column_header(self):
+        if self._column_title:
+            return self._column_title
+        else:
+            return self._painter.get_column_header()
+
+    def get_long_column_header(self):
+        if self._column_title:
+            return self._column_title
+        else:
+            return self._painter.get_long_column_header()
+
+    def get_group_value(self, row):
+        service_row = row["JOIN"][self._service_description]
+        return self._painter.get_group_value(service_row)
 
 
 
@@ -3388,8 +3449,6 @@ elements.register_element_type(TableView)
 # - Dass alle Layouts gehen (fehlt noch Tiled, Matrix, Mobile...)
 # - Dass alle Views gehen
 # - Dass alle Datasources gehen
-# - Join Columns
-# - Column Tooltips
 # - Painter options anzeigen
 # - Inventory-Daten mit Filtern und Columns
 # - display_options müssen wieder wirken
@@ -3406,6 +3465,8 @@ elements.register_element_type(TableView)
 #     wie wir mit dieser Auswahlmöglichkeit mit den Checkboxen vorgehen.
 #   - Diese komische row-selection muss auch aufgeräumt werden.
 # - Kontrollieren, ob Kommandos per Webservice noch funktionieren (z.B. downtime-Skript)
+# - Painter mit Argumenten
+# - merge_columns: Daten von verschiedenen Sites zusammenfassen
 # ...
 
 # SCHÖNER
