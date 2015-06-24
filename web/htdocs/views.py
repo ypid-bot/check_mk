@@ -2167,6 +2167,7 @@ def join_row(row, p):
         return row
 
 def prepare_paint(p, row):
+    # TODO: Sobald auf elements umgestellt ist, kann das ganze prepare_paint rausfliegen.
     if isinstance(p, Painter):
         return p.get_tdclass_and_content(row)
 
@@ -2703,6 +2704,7 @@ class Datasource(elements.Element):
             "title_plural"   : _("Datasources"),
         }.get(what, elements.Element.phrase(what))
 
+    # TODO: info_names??
     def infos(self):
         return self._["infos"]
 
@@ -2712,7 +2714,7 @@ class Datasource(elements.Element):
             columns += elements.Info.instance(info_name).key_columns()
         return columns
 
-    # Columns that the datasource always quries and provides
+    # Columns that the datasource always queries and provides
     def implicit_columns(self):
         return self.key_columns()
 
@@ -2779,7 +2781,7 @@ class LivestatusDatasource(Datasource):
         query = "GET %s\n" % self._["table"]
         query += "Columns: %s\n" % " ".join(columns)
         query += context.livestatus_filters()
-        query += self._.get("livestatus_headers", "")
+        query += self.implicit_livestatus_headers()
 
         # Tell Livestatus client module to create an artificial column with the site
         html.live.set_prepend_site(True)
@@ -2792,12 +2794,16 @@ class LivestatusDatasource(Datasource):
             html.write('<div class="livestatus message">'
                        '<tt>%s</tt></div>\n' % (query.replace('\n', '<br>\n')))
 
+        # TODO: query() sollte only_sites als Argument bekommen! Und auch prepend und limit
         data = html.live.query(query)
         html.live.set_only_sites(None)
         html.live.set_prepend_site(False)
         html.live.set_limit() # removes limit
 
-        # TODO: Join columns
+        # TODO: Merging: Bei Abfrage von Hostgruppen von mehreren Sites, die
+        # Anzahlen aufaddieren. Dann macht auch die "site" Spalte keinen Sinn.
+        # Brauchen wir dafür evtl. eigene Datasources? Wir haben das ja nur
+        # bei Host- und Servicegruppen.
         # if merge_column:
         #     data = merge_data(data, columns)
 
@@ -2805,15 +2811,21 @@ class LivestatusDatasource(Datasource):
         columns = [ "site" ] + columns
         return [ dict(zip(columns, row)) for row in data ]
 
+    def implicit_livestatus_headers(self):
+        return self._.get("livestatus_headers", "")
+
+
 # Special case for table containing host data: add inventory information
 class LivestatusHostDatasource(LivestatusDatasource):
     def __init__(self, **kwargs):
         LivestatusDatasource.__init__(self, **kwargs)
-        self._datasource = LivestatusDatasource(**kwargs)
+        self._datasource = LivestatusDatasource(**kwargs) # TODO: braucht man nicht mehr
 
     def do_query(self, columns, context, limit=None):
         host_columns, required_services, required_service_columns = self.split_columns_into_host_and_joins(columns)
 
+        # TODO: Hier kann ich mit super(LivestatusDatasource, self).query(host_columns, context, limit)
+        # TODO: dazu muss elements on object erben.
         rows = self._datasource.query(host_columns, context, limit)
         if "host_inventory" in columns:
             for row in rows:
@@ -2829,11 +2841,10 @@ class LivestatusHostDatasource(LivestatusDatasource):
         required_services = []
         required_service_columns = set([])
         for column in columns:
-            if type(column) == tuple:
+            if type(column) == tuple: # .e.g ( "CPU load", [ "perfdata", "service_description" ] )
                 service_description, required_columns = column
                 required_services.append(service_description)
                 required_service_columns.update(required_columns)
-                host_columns.add("host_name")
             else:
                 host_columns.add(column)
 
@@ -2854,6 +2865,7 @@ class LivestatusHostDatasource(LivestatusDatasource):
         for row in rows:
             query += "Filter: host_name = %s\n" % row["host_name"]
             only_sites.add(row["site"])
+        query += "Or: %d\n" % len(rows)
 
         # Fetch data via Livestatus, only from relevant sites
         only_sites = list(only_sites)
@@ -2906,32 +2918,34 @@ def get_datasource(datasource_name):
 #   |  In most cases each column corresponds to one specific painter type. |
 #   '----------------------------------------------------------------------'
 
-class Painter:
-    def __init__(self, link_view_name, tooltip_painter):
+
+#.
+#   .--CellRenderer--------------------------------------------------------.
+#   |        ____     _ _ ____                _                            |
+#   |       / ___|___| | |  _ \ ___ _ __   __| | ___ _ __ ___ _ __         |
+#   |      | |   / _ \ | | |_) / _ \ '_ \ / _` |/ _ \ '__/ _ \ '__|        |
+#   |      | |__|  __/ | |  _ <  __/ | | | (_| |  __/ | |  __/ |           |
+#   |       \____\___|_|_|_| \_\___|_| |_|\__,_|\___|_|  \___|_|           |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |  A CellRenderer renders a HTML TD cell (usually) using the data from |
+#   |  a row. On CellRenderer is being created for each column of a table  |
+#   |  view.                                                               |
+#   '----------------------------------------------------------------------'
+
+class CellRenderer(object):
+    def __init__(self, content_painter, link_view_name, tooltip_painter):
+        object.__init__(self)
+        self._content_painter = content_painter
         self._link_view_name = linkview_name
         self._tooltip_painter = tooltip_painter
 
-    @mandatory
-    def paint(self, row):
-        pass
-
-    @mandatory
-    def required_columns(self):
-        pass
-
-    @mandatory
-    def get_column_header(self):
-        pass
-
-    @mandatory
-    def get_long_column_header(self):
-        pass
-
-    def get_tdclass_and_content(self, row):
-        tdclass, content = self.paint(row)
+    def render(self, row):
+        tdclass, content = self._content_painter.render(row)
         if tdclass == "" and content == "":
             return tdclass, content
 
+        # TODO: Warum das hier? Und warum dann nicht auch beim Tooltip?
         content = html.utf8_to_entities(content)
 
         # Create contextlink to other view
@@ -2941,18 +2955,65 @@ class Painter:
 
         # Tooltip
         if content != '' and self._tooltip_painter:
-            cla, tooltip_text = self._tooltip_painter.get_tdclass_and_content(row)
+            cla, tooltip_text = self._tooltip_painter.render(row)
             content = '<span title="%s">%s</span>' % (tooltip_text, content)
         return tdclass, content
 
+# Painter constructed by other painters: Service column in host view
+class ServiceOfHostCellRenderer(CellRenderer):
+    def __init__(self, content_painter, link_view_name, tooltip_painter, service_description, column_title=None):
+        CellRenderer.__init__(content_painter, link_view_name, tooltip_painter)
+        self._service_description = service_description
+        self._column_title = column_title or service_description
 
-class PainterType(elements.Element):
+    def render(self, row):
+        service_row = row["JOIN"].get(self._service_description)
+        if service_row:
+            return super(CellRenderer, self).render(sevice_row)
+        else:
+            return "", "" # service missing for this host
+
+    def required_columns(self):
+        service_columns = self._painter.required_columns()
+        # Encode JOIN columns as ( SERVICE_DESC, TUPLE_OF_SERVICE_COLUMNS )
+        return [ (self._service_description, tuple(service_columns)) ]
+
+    def get_column_header(self):
+        if self._column_title:
+            return self._column_title
+        else:
+            return self._painter.get_column_header()
+
+    def get_long_column_header(self):
+        if self._column_title:
+            return self._column_title
+        else:
+            return self._painter.get_long_column_header()
+
+    def get_group_value(self, row):
+        service_row = row["JOIN"][self._service_description]
+        return self._painter.get_group_value(service_row)
+
+#.
+#   .--Painter-------------------------------------------------------------.
+#   |                   ____       _       _                               |
+#   |                  |  _ \ __ _(_)_ __ | |_ ___ _ __                    |
+#   |                  | |_) / _` | | '_ \| __/ _ \ '__|                   |
+#   |                  |  __/ (_| | | | | | ||  __/ |                      |
+#   |                  |_|   \__,_|_|_| |_|\__\___|_|                      |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |                                                                      |
+#   '----------------------------------------------------------------------'
+
+
+class Painter(elements.Element):
     def __init__(self, d):
         elements.Element.__init__(self, d)
 
     @classmethod
     def type_name(self):
-        return "painter_type"
+        return "painter"
 
     @classmethod
     def phrase(self, what):
@@ -2961,40 +3022,16 @@ class PainterType(elements.Element):
             "title_plural"   : _("Columns"),
         }[what]
 
-    @classmethod
-    def create_painter_from_spec(self, spec):
-        # Plain painters:        ( painter_name, )
-        # Plain painters:        ( painter_name, link_view_name, )
-        # Plain painters:        ( painter_name, link_view_name, tooltip_painter )
-        # host-service-painters: ( painter_name, link_view_name, tooltip_painter, service_descr, (?.title.?) )
-        while len(spec) < 3:
-            spec += (None,)
-        painter_type_name, link_view_name, tooltip_painter_name = spec[:3]
-        painter_type = self.instance(painter_type_name)
 
-        # Add tooltip painter if specified
-        if tooltip_painter_name:
-            tooltip_painter = self.create_painter_from_spec((tooltip_painter_name, None, None))
-        else:
-            tooltip_painter = None
-
-        # Finally create painter object
-        painter = painter_type.create_painter(link_view_name, tooltip_painter)
-
-        # In case of service-in-host-view-columns wrap painter in HostServicePainter
-        if len(spec) >= 4:
-            painter = HostServicePainter(painter, *(spec[3:]))
-
-        return painter
 
     def create_painter(self, link_view_name, tooltip_painter):
         return PlainPainter(self._, link_view_name, tooltip_painter)
 
 
-elements.register_element_type(PainterType)
+elements.register_element_type(Painter)
 
-def declare_painter_type(painter_type):
-    PainterType.add_instance(painter_type.name(), painter_type)
+def declare_painter(painter):
+    Painter.add_instance(painter.name(), painter)
 
 
 # Normal painters for hosts, services, etc., selectable by users
@@ -3027,42 +3064,6 @@ class PlainPainter(Painter):
             return [ row[c] for c in self.required_columns() ]
 
 
-
-# Painter constructed by other painters: Service column in host view
-class HostServicePainter(Painter):
-    def __init__(self, painter, service_description, column_title=None):
-        self._painter = painter
-        self._service_description = service_description
-        self._column_title = column_title or service_description
-
-    def get_tdclass_and_content(self, row):
-        service_row = row["JOIN"].get(self._service_description)
-        if service_row:
-            return self._painter.get_tdclass_and_content(service_row)
-        else:
-            return "", "" # service missing for this host
-
-    def required_columns(self):
-        host_columns = [ "host_name" ]
-        service_columns = self._painter.required_columns()
-        # Encode JOIN columns as ( SERVICE_DESC, TUPLE_OF_SERVICE_COLUMNS )
-        return host_columns + [ (self._service_description, tuple(service_columns)) ]
-
-    def get_column_header(self):
-        if self._column_title:
-            return self._column_title
-        else:
-            return self._painter.get_column_header()
-
-    def get_long_column_header(self):
-        if self._column_title:
-            return self._column_title
-        else:
-            return self._painter.get_long_column_header()
-
-    def get_group_value(self, row):
-        service_row = row["JOIN"][self._service_description]
-        return self._painter.get_group_value(service_row)
 
 
 
@@ -3177,14 +3178,43 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
     def infos(self):
         return self.datasource().infos()
 
-    def column_painters(self):
-        return self.build_painters_from_specs(self._["painters"])
+    def row_cell_renderers(self):
+        return self.build_cell_renderers_from_specs(self._["painters"])
 
-    def group_painters(self):
-        return self.build_painters_from_specs(self._["group_painters"])
+    def group_cell_renderers(self):
+        return self.build_cell_renderers_from_specs(self._["group_painters"])
 
-    def build_painters_from_specs(self, painter_specs):
-        return map(PainterType.create_painter_from_spec, painter_specs)
+    def build_cell_renderers_from_specs(self, painter_specs):
+        return [
+            self.build_cell_renderer_from_spec(painter_spec)
+            for painter_spec
+            in painter_specs
+        ]
+
+    def build_cell_renderer_from_spec(self, spec):
+        # Plain painters:        ( painter_name, )
+        # Plain painters:        ( painter_name, link_view_name, )
+        # Plain painters:        ( painter_name, link_view_name, tooltip_painter )
+        # host-service-painters: ( painter_name, link_view_name, tooltip_painter, service_descr )
+        # host-service-painters: ( painter_name, link_view_name, tooltip_painter, service_descr, title )
+        while len(spec) < 3:
+            spec += (None,) # TODO: das könnte auch TableView.sanitize schon machen.
+        content_painter_name, link_view_name, tooltip_painter_name = spec[:3]
+        content_painter = Painter.instance(content_painter_name)
+
+        # Add tooltip painter if specified
+        if tooltip_painter_name:
+            tooltip_painter = Painter.instance(tooltip_painter_name)
+        else:
+            tooltip_painter = None
+        
+        if len(spec) >= 4:
+            # TODO: normalizieren und dann ist len immer 5
+            return ServiceOfHostCellRenderer(content_painter, link_view_name, tooltip_painter, *(spec[3:]))
+        else:
+            return CellRenderer(content_painter, link_view_name, tooltip_painter)
+
+
 
     # Return a list of the names of all columns that need to
     # be fetched from the datasource. There are several reasons
@@ -3251,7 +3281,7 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
                       self.datasource().object_type_title(),
                       _("Number of objects"),
                       len(rows))
-                      
+
         return html.confirm(message)
 
 
@@ -3305,7 +3335,7 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
         return rows
 
     def render_rows(self, rows, render_options):
-        self.layout().render(rows, self.column_painters(), self.group_painters(), render_options)
+        self._layout.render(rows, self.row_cell_renderers(), self.group_cell_renderers(), render_options)
 
     def render_html_footer(self, render_options):
         # TODO: Also das hier muss mindestens nach PageRenderer

@@ -129,9 +129,10 @@ class Element:
             if "sanitize" in clazz.__dict__:
                 clazz.sanitize(d)
 
+    @mandatory
     @classmethod
     def type_name(self):
-        return "element"
+        pass
 
     @classmethod
     def type_icon(self):
@@ -899,7 +900,7 @@ class ContextAware(Element):
         for selector in Selector.instances():
             if selector.info() in self.infos() and \
                selector.is_active():
-               context_dict[selector.name()] = selector.get_selector_context()
+               context_dict[selector.name()] = selector.get_selector_context_from_url()
         return Context(self.infos(), self.single_infos(), context_dict)
 
     # Construct a context from one row of the results of a datasource query
@@ -1201,7 +1202,7 @@ class ContextAwarePageRenderer(ContextAware, PageRenderer):
         html.write("<div class=topic>%s</div>" % topic)
         html.write("<div class=selector_container>")
         for selector in selectors:
-            selector_context = context.get(selector.name(), {})
+            selector_context = context.get_selector_context(selector.name(), {})
             selector.render(selector_context)
         html.write("</div>")
         html.write("</div><br>")
@@ -1422,8 +1423,8 @@ class Selector(Element):
 
     # Pick out the URL variables that make up this selector. The selector
     # needs to decide wether it is active in the first place. If not it
-    # must return None and not a list of empy URL variables.
-    def get_selector_context(self):
+    # must return None and not a list of empty URL variables.
+    def get_selector_context_from_url(self):
         if self.is_active():
             return dict([(varname, html.var(varname, "")) for varname in self.variables()])
 
@@ -1509,6 +1510,8 @@ def register_selector(selector):
 #   '----------------------------------------------------------------------'
 
 class Context(Element):
+    # TODO: Müsste es hier nicht info_names und single_info_names heißen?
+    # Oder arbeitet man gleich mit den Referenzen auf die Info-Objekte?
     def __init__(self, infos, single_infos, context_dict):
         self._single_infos = single_infos
         self._infos = infos
@@ -1550,7 +1553,7 @@ class Context(Element):
                 new_dict[info_name] = self._[info_name]
         return Context(self.infos(), self.single_infos(), new_dict)
 
-    def get(self, selector_name, default_value=None):
+    def get_selector_context(self, selector_name, default_value=None):
         return self._.get(selector_name, default_value)
 
 
@@ -1568,6 +1571,8 @@ class Context(Element):
         headers = ""
         for selector_name, selector_context in self._.items():
             if not Selector.has_instance(selector_name):
+                # TODO: If we have migrated all selectors then this
+                # must not happen
                 pass
             else:
                 selector = Selector.instance(selector_name)

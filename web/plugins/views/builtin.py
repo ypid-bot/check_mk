@@ -1284,7 +1284,7 @@ multisite_builtin_views.update({
              'show_filters': [],
              'sorters': [],
              'linktitle': _('Details'),
-             'title': _('Service')},
+             'title': _('Details')},
  'servicedesc': {'browser_reload': 30,
                'column_headers': 'pergroup',
                  'datasource': 'services',

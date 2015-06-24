@@ -47,6 +47,8 @@ register_info(
         name             = "host",
         title            = _("Host"),
         title_plural     = _("Hosts"),
+        # TODO: umbenennen, weil es ja kein Context() liefert, sondern
+        # nur ein partielles dict.
         context_from_row = lambda row: { "host" : row["host_name"] },
         key_columns      = [ "host_name" ],
 ))
