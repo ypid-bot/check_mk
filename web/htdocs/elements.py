@@ -115,8 +115,9 @@ def render_addto_popup():
 #   |  or PageRenderer.                                                    |
 #   '----------------------------------------------------------------------'
 
-class Element:
+class Element(object):
     def __init__(self, d):
+        object.__init__(self)
         # The dictionary with the name _ holds all information about
         # the page in question - as a dictionary that can be loaded
         # and saved to files using repr().
@@ -141,17 +142,21 @@ class Element:
     def internal_representation(self):
         return self._
 
+    # TODO: remove this hack
     def __repr__(self):
         return repr(self._)
 
+    # TODO: remove this hack
     def __getitem__(self, key):
         return self._[key]
 
+    # TODO: remove this hack
     def __contains__(self, key):
         return key in self._
 
-    def pformat(self):
-        return self.type_name() + ": " + pprint.pformat(self._)
+    # TODO: remove this hack
+    # def pformat(self):
+    #     return self.type_name() + ": " + pprint.pformat(self._)
 
     # You always must override the following method. Not all phrases
     # might be neccessary depending on the type of you page.

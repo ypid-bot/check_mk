@@ -48,7 +48,7 @@ def render_single_dataset(rows, view, group_painters, painters, num_columns, _ig
             html.write("<tr class=gap><td class=gap colspan=%d></td></tr>\n" % (1 + num_columns))
         thispart = rows[rownum:rownum + num_columns]
         for p in painters:
-            if isinstance(p, Painter):
+            if isinstance(p, CellRenderer):
                 title = p.get_long_column_header()
             else:
                 painter, link = p[0:2]

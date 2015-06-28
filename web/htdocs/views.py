@@ -90,7 +90,7 @@ def load_plugins():
     # ja, weil das ja dann in den Plugins läuft.
     for name, entry in multisite_painters.items():
         entry["name"] = name
-        declare_painter_type(PainterType(entry))
+        declare_painter(LegacyDictPainter(entry))
 
 
 
@@ -2168,8 +2168,8 @@ def join_row(row, p):
 
 def prepare_paint(p, row):
     # TODO: Sobald auf elements umgestellt ist, kann das ganze prepare_paint rausfliegen.
-    if isinstance(p, Painter):
-        return p.get_tdclass_and_content(row)
+    if isinstance(p, CellRenderer):
+        return p.render(row)
 
     # Legacy implementation without Elements
     painter = p[0]
@@ -2380,7 +2380,7 @@ def sort_url(view, painter, join_index):
     return ','.join(p)
 
 def paint_header(view, p):
-    if isinstance(p, Painter):
+    if isinstance(p, CellRenderer):
         title_text = p.get_column_header()
         html.write("<th class=sort>%s</th>" % (title_text))
         return
@@ -2438,7 +2438,7 @@ def register_events(row):
 # The Group-value of a row is used for deciding wether
 # two rows are in the same group or not
 def group_value(row, group_painters):
-    if isinstance(group_painters[0], Painter):
+    if isinstance(group_painters[0], CellRenderer):
         group_val = []
         for painter in group_painters:
             group_val += painter.get_group_value(row)
@@ -2929,15 +2929,40 @@ def get_datasource(datasource_name):
 #   |                                                                      |
 #   +----------------------------------------------------------------------+
 #   |  A CellRenderer renders a HTML TD cell (usually) using the data from |
-#   |  a row. On CellRenderer is being created for each column of a table  |
+#   |  a row. One CellRenderer is being created for each column of a table |
 #   |  view.                                                               |
 #   '----------------------------------------------------------------------'
 
 class CellRenderer(object):
-    def __init__(self, content_painter, link_view_name, tooltip_painter):
+    def __init__(self):
         object.__init__(self)
+
+    @mandatory
+    def render(self, row):
+        pass
+
+    @mandatory
+    def required_columns(self):
+        pass
+
+    @mandatory
+    def get_column_header(self):
+        pass
+
+    @mandatory
+    def get_long_column_header(self):
+        pass
+
+    @mandatory
+    def get_group_value(self, row):
+        pass
+
+
+class DirectCellRenderer(CellRenderer):
+    def __init__(self, content_painter, link_view_name, tooltip_painter):
+        CellRenderer.__init__(self)
         self._content_painter = content_painter
-        self._link_view_name = linkview_name
+        self._link_view_name = link_view_name
         self._tooltip_painter = tooltip_painter
 
     def render(self, row):
@@ -2959,22 +2984,39 @@ class CellRenderer(object):
             content = '<span title="%s">%s</span>' % (tooltip_text, content)
         return tdclass, content
 
+    def required_columns(self):
+        req = self._content_painter.required_columns()
+        if self._tooltip_painter:
+            req = req + self._tooltip_painter.required_columns()
+        return req
+
+    def get_column_header(self):
+        return self._content_painter.get_column_header()
+
+    def get_long_column_header(self):
+        return self._content_painter.get_long_column_header()
+
+    def get_group_value(self, row):
+        return self._content_painter.get_group_value(row)
+
+
 # Painter constructed by other painters: Service column in host view
 class ServiceOfHostCellRenderer(CellRenderer):
     def __init__(self, content_painter, link_view_name, tooltip_painter, service_description, column_title=None):
-        CellRenderer.__init__(content_painter, link_view_name, tooltip_painter)
+        CellRenderer.__init__(self)
+        self._cell_renderer = DirectCellRenderer(content_painter, link_view_name, tooltip_painter)
         self._service_description = service_description
         self._column_title = column_title or service_description
 
     def render(self, row):
         service_row = row["JOIN"].get(self._service_description)
         if service_row:
-            return super(CellRenderer, self).render(sevice_row)
+            return self._cell_renderer.render(service_row)
         else:
-            return "", "" # service missing for this host
+            return "", "" # service missing for this host -> empty cell
 
     def required_columns(self):
-        service_columns = self._painter.required_columns()
+        service_columns = self._cell_renderer.required_columns()
         # Encode JOIN columns as ( SERVICE_DESC, TUPLE_OF_SERVICE_COLUMNS )
         return [ (self._service_description, tuple(service_columns)) ]
 
@@ -2982,17 +3024,20 @@ class ServiceOfHostCellRenderer(CellRenderer):
         if self._column_title:
             return self._column_title
         else:
-            return self._painter.get_column_header()
+            return self._cell_renderer.get_column_header()
 
     def get_long_column_header(self):
         if self._column_title:
             return self._column_title
         else:
-            return self._painter.get_long_column_header()
+            return self._cell_renderer.get_long_column_header()
 
     def get_group_value(self, row):
         service_row = row["JOIN"][self._service_description]
-        return self._painter.get_group_value(service_row)
+        if service_row:
+            return self._cell_renderer.get_group_value(service_row)
+        else:
+            return "" # service missing for this host -> empty group value
 
 #.
 #   .--Painter-------------------------------------------------------------.
@@ -3003,13 +3048,15 @@ class ServiceOfHostCellRenderer(CellRenderer):
 #   |                  |_|   \__,_|_|_| |_|\__\___|_|                      |
 #   |                                                                      |
 #   +----------------------------------------------------------------------+
-#   |                                                                      |
+#   |  A Painter is an object that selects something out of a data row and |
+#   |  creates a user representation of that part of the data.             |
 #   '----------------------------------------------------------------------'
 
 
 class Painter(elements.Element):
-    def __init__(self, d):
-        elements.Element.__init__(self, d)
+    def __init__(self):
+        # TODO: Remove dicts from elements
+        elements.Element.__init__(self, {})
 
     @classmethod
     def type_name(self):
@@ -3022,11 +3069,24 @@ class Painter(elements.Element):
             "title_plural"   : _("Columns"),
         }[what]
 
+    @mandatory
+    def paint(self, row):
+        pass
 
+    @mandatory
+    def required_columns(self):
+        pass
 
-    def create_painter(self, link_view_name, tooltip_painter):
-        return PlainPainter(self._, link_view_name, tooltip_painter)
+    @mandatory
+    def get_column_header(self):
+        pass
 
+    @mandatory
+    def get_long_column_header(self):
+        pass
+
+    def get_group_value(self, row):
+        return [ row[c] for c in self.required_columns() ]
 
 elements.register_element_type(Painter)
 
@@ -3034,21 +3094,17 @@ def declare_painter(painter):
     Painter.add_instance(painter.name(), painter)
 
 
-# Normal painters for hosts, services, etc., selectable by users
-class PlainPainter(Painter):
-    def __init__(self, declaration_dict, link_view_name, tooltip_painter):
+# Legacy-style Painters that are declared with a dict
+class LegacyDictPainter(Painter):
+    def __init__(self, declaration_dict):
+        Painter.__init__(self)
         self._ = declaration_dict
-        self._link_view_name = link_view_name
-        self._tooltip_painter = tooltip_painter
 
-    def paint(self, row):
+    def render(self, row):
         return self._["paint"](row)
 
     def required_columns(self):
-        if self._tooltip_painter:
-            return self._tooltip_painter.required_columns() + self._["columns"]
-        else:
-            return self._["columns"]
+        return self._["columns"]
 
     def get_column_header(self):
         return self._.get("short", self.get_long_column_header())
@@ -3061,10 +3117,8 @@ class PlainPainter(Painter):
         if groupvalfunc:
             return [ groupvalfunc(row), ]
         else:
+            # TODO: Das hier sollte besser sein, wirft aber einen fehler: return super(Painter, self).get_group_value(self, row)
             return [ row[c] for c in self.required_columns() ]
-
-
-
 
 
 #.
@@ -3207,12 +3261,12 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
             tooltip_painter = Painter.instance(tooltip_painter_name)
         else:
             tooltip_painter = None
-        
+
         if len(spec) >= 4:
             # TODO: normalizieren und dann ist len immer 5
             return ServiceOfHostCellRenderer(content_painter, link_view_name, tooltip_painter, *(spec[3:]))
         else:
-            return CellRenderer(content_painter, link_view_name, tooltip_painter)
+            return DirectCellRenderer(content_painter, link_view_name, tooltip_painter)
 
 
 
@@ -3221,8 +3275,8 @@ class TableView(elements.ContextAwarePageRenderer, elements.Overridable, element
     # why we need columns:
     def required_columns(self):
         columns = set([])
-        for painter in self.column_painters() + self.group_painters():
-            columns.update(painter.required_columns())
+        for cell_renderer in self.row_cell_renderers() + self.group_cell_renderers():
+            columns.update(cell_renderer.required_columns())
         # TODO:
         # - Columns of datasource (or should this be implicit?)
         # - Columns of selectors (we need the context therefore)
