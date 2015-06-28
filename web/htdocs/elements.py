@@ -24,6 +24,26 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
+# Class hierarchy:
+#
+# ContextAware -------------------------------------+
+#                                                   |
+#                                                   V
+# UIElement -+- EditableUIElement --- PageRenderer -+- ContextAwarePageRenderer - View
+#            |
+#            +- ObjectType
+#            |
+#            +- Datasource
+#            |
+#            +- Selector
+#
+# ContextAware is used as an additional subclass for all elements that are
+# are aware of a context
+#
+# Currently all PageRenderers are editable, so we avoid multiple inheritance
+# here?
+
+
 #   .--imports-------------------------------------------------------------.
 #   |                _                            _                        |
 #   |               (_)_ __ ___  _ __   ___  _ __| |_ ___                  |
@@ -55,27 +75,27 @@ except ImportError:
 #   |  Global methods for the integration of Elements into Multisite       |
 #   '----------------------------------------------------------------------'
 
-# Global dict of all page types, e.g. subclasses of Element
-element_types = {}
+# Global dict of all page types, e.g. subclasses of UIElement
+ui_element_types = {}
 
-def register_element_type(element_type):
-    element_types[element_type.type_name()] = element_type
-    element_type.declare_permissions()
+def register_ui_element_type(ui_element_type):
+    ui_element_types[ui_element_type.type_name()] = ui_element_type
+    ui_element_type.declare_permissions()
 
-def element_type(element_type_name):
-    return element_types[element_type_name]
+def ui_element_type(ui_element_type_name):
+    return ui_element_types[ui_element_type_name]
 
-def has_element_type(element_type_name):
-    return element_type_name in element_types
+def have_ui_element_type(ui_element_type_name):
+    return ui_element_type_name in ui_element_types
 
-def get_element_by_type_and_name(element_type_name, element_name):
-    et = element_type(element_type_name)
-    return et.get_element_by_name(element_name)
+def get_ui_element_by_type_and_name(ui_element_type_name, ui_element_name):
+    uet = ui_element_type(ui_element_type_name)
+    return uet.get_ui_element_by_name(ui_element_name)
 
-def all_element_types_implementing(some_class):
-    for element_type in element_types.values():
-        if issubclass(element_type, some_class):
-            yield element_type
+def all_ui_element_types_implementing(some_class):
+    for ui_element_type in ui_element_types.values():
+        if issubclass(ui_element_type, some_class):
+            yield ui_element_type
 
 
 # Global module functions for the integration into the rest of the code
@@ -103,173 +123,48 @@ def render_addto_popup():
 
 
 #.
-#   .--Element-------------------------------------------------------------.
-#   |                _____ _                           _                   |
-#   |               | ____| | ___ _ __ ___   ___ _ __ | |_                 |
-#   |               |  _| | |/ _ \ '_ ` _ \ / _ \ '_ \| __|                |
-#   |               | |___| |  __/ | | | | |  __/ | | | |_                 |
-#   |               |_____|_|\___|_| |_| |_|\___|_| |_|\__|                |
+#   .--UIElement-----------------------------------------------------------.
+#   |           _   _ ___ _____ _                           _              |
+#   |          | | | |_ _| ____| | ___ _ __ ___   ___ _ __ | |_            |
+#   |          | | | || ||  _| | |/ _ \ '_ ` _ \ / _ \ '_ \| __|           |
+#   |          | |_| || || |___| |  __/ | | | | |  __/ | | | |_            |
+#   |           \___/|___|_____|_|\___|_| |_| |_|\___|_| |_|\__|           |
 #   |                                                                      |
 #   +----------------------------------------------------------------------+
-#   |  Base class of all things that are UserOverridable, ElementContainer |
-#   |  or PageRenderer.                                                    |
+#   |  Base class of all elements that are visible to the user, such as    |
+#   |  Painter, Layouts, Datasources, Views. UIElements can be presented   |
+#   |  to the user in selection lists and menues.                          |
+#   |  Here is the current list of all UI elements in CEE and CRE:         |
+#   |  - Info                                                              |
+#   |  - Datasource                                                        |
+#   |  - Painter                                                           |
+#   |  - Layout                                                            |
+#   |  - TableView                  ContextAware PageRenderer              |
+#   |  - Dashboard                  ContextAware PageRenderer              |
+#   |  - Dashlet                    ContextAware                           |
+#   |  - GraphCollection            PageRenderer                           |
+#   |  - GraphTemplate (future)                                            |
+#   |  - Report                     ContextAware                           |
+#   |  - ReportElement              ContextAware                           |
 #   '----------------------------------------------------------------------'
 
-class Element(object):
-    def __init__(self, d):
+
+class UIElement(object):
+    def __init__(self):
         object.__init__(self)
-        # The dictionary with the name _ holds all information about
-        # the page in question - as a dictionary that can be loaded
-        # and saved to files using repr().
-        self._ = d
 
-        # Now give all subclasses that chance to add mandatory keys in that
-        # dictionary in case they are missing.
-        # TODO: Check, if this can be done with super() instead of inspect.
-        for clazz in inspect.getmro(self.__class__)[::-1]:
-            if "sanitize" in clazz.__dict__:
-                clazz.sanitize(d)
+    def register(self):
+        self.add_instance(self.name(), self)
 
-    @mandatory
-    @classmethod
-    def type_name(self):
-        pass
-
-    @classmethod
-    def type_icon(self):
-        return self.type_name()
-
-    def internal_representation(self):
-        return self._
-
-    # TODO: remove this hack
-    def __repr__(self):
-        return repr(self._)
-
-    # TODO: remove this hack
-    def __getitem__(self, key):
-        return self._[key]
-
-    # TODO: remove this hack
-    def __contains__(self, key):
-        return key in self._
-
-    # TODO: remove this hack
-    # def pformat(self):
-    #     return self.type_name() + ": " + pprint.pformat(self._)
-
-    # You always must override the following method. Not all phrases
-    # might be neccessary depending on the type of you page.
-    # Possible phrases:
-    # "title"        : Title of one instance
-    # "title_plural" : Title in plural
-    # "add_to"       : Text like "Add to foo bar..."
-    # TODO: Look at GraphCollection for the complete list of phrases to
-    # be defined for each page type and explain that here.
-    @classmethod
-    def phrase(self, phrase):
-        return "%s: %s" % (phrase, self.type_name())
-
-    # You can override this if you class needs any permissions to
-    # be declared. Note: currently only *one* of the classes in the
-    # inheritance tree can override this method. If we need to change
-    # this we can do this like in __init__ with sanitize...
-    @classmethod
-    def declare_permissions(self):
-        pass
-
-    # Implement this function in a subclass in order to add parameters
-    # to be editable by the user when editing the details of such page
-    # type. Note: This method does *not* use overriding, but all methods
-    # of this name will be called in all inherited classes and concatenated.
-    # Note:
-    # - self is the original class, e.g. PageRenderer
-    # - clazz is the derived class, e.g. GraphCollection
-    # Returns a list of entries.
-    # Each entry is a pair of a topic and a list of elements.
-    # Each element is a triple of order, key and valuespec
-    # TODO: Add topic here
-    @classmethod
-    def parameters(self, clazz):
-        return [ ( _("General Properties"), [
-            ( 1.1, 'name', ID(
-                title = _('Unique ID'),
-                help = _("The ID will be used do identify this page in URLs. If this page has the "
-                         "same ID as a builtin page of the type <i>%s</i> then it will shadow the builtin one.") % self.phrase("title"),
-            )),
-            ( 1.2, 'title', TextUnicode(
-                title = _('Title') + '<sup>*</sup>',
-                size = 50,
-                allow_empty = False,
-            )),
-            ( 1.3, 'description', TextAreaUnicode(
-                title = _('Description') + '<sup>*</sup>',
-                help = _("The description is optional and can be used for explainations or documentation"),
-                rows = 4,
-                cols = 50,
-            )),
-        ])]
-
-    # Do *not* override this. It collects all editable parameters of our
-    # page type by calling parameters() for each class
-    @classmethod
-    def collect_parameters(self):
-        topics = {}
-        for clazz in inspect.getmro(self)[::-1]:
-            if "parameters" in clazz.__dict__:
-                for topic, elements in clazz.parameters(self):
-                    el = topics.setdefault(topic, [])
-                    el += elements
-
-        # Sort topics and elements in the topics
-        for topic in topics.values():
-            topic.sort()
-
-        sorted_topics = topics.items()
-        sorted_topics.sort(cmp = lambda t1, t2: cmp(t1[1][0], t2[1][0]))
-
-        # Now remove order numbers. Also drop the topic completely
-        # for the while
-        # TODO: Reenable topic as soon as we have the first page type
-        # with more than one topic
-        parameters = []
-        for topic, elements in sorted_topics:
-            for order, key, vs in elements:
-                parameters.append((key, vs))
-
-        return parameters
-
-
-    # Object methods that *can* be overridden - for cases where
-    # that pages in question of a dictionary format that is not
-    # compatible.
-    def name(self):
-        return self._["name"]
-
-    def topic(self):
-        if "topic" in self._:
-            return self._["topic"]
-        else:
-            return self.default_topic()
-
-    def title(self):
-        return self._["title"]
-
-    def description(self):
-        return self._.get("description", "")
-
-    @classmethod
-    def default_topic(self):
-        return _("Other")
-
-    # Store for all instances of this element type. The key into
-    # this dictionary????
-    # TODO: Brauchen wir hier überhaupt ein dict??
-    __instances = {}
+    # .--------------------------------------------------------------------.
+    # | Handling of instances                                              |
+    # '--------------------------------------------------------------------'
 
     # Beware: __instances is *not* created in each subclass, but
-    # exists just once for all element types. For that reason we
+    # exists just once for all UI element types. For that reason we
     # need a two-tier-dict.
+    __instances = {}
+
     @classmethod
     def instances_dict(self):
         return self.__instances.setdefault(self.type_name, {})
@@ -306,52 +201,186 @@ class Element(object):
         instances.sort(cmp = lambda a,b: cmp(a.title(), b.title()))
         return instances
 
+
+    # .--------------------------------------------------------------------.
+    # | Methods to be overridden by subclasses                             |
+    # '--------------------------------------------------------------------'
+
+    @mandatory
+    @classmethod
+    def type_name(self):
+        pass
+
+    @classmethod
+    def type_icon(self):
+        return self.type_name()
+
+    # Possible phrases ids:
+    # "title"        : Title of one instance
+    # "title_plural" : Title in plural
+    # "add_to"       : Text like "Add to foo bar..."
+    # TODO: Look at GraphCollection for the complete list of phrases to
+    # be defined for each page type and explain that here.
+    @mandatory
+    @classmethod
+    def phrase(self, phrase_id):
+        pass
+
+    @classmethod
+    def declare_permissions(self):
+        pass
+
+    @classmethod
+    def page_handlers(self):
+        return []
+
+    @mandatory
+    def name(self):
+        pass
+
+    @mandatory
+    def title(self):
+        pass
+
+    @mandatory
+    def description(self):
+        pass
+
+    @classmethod
+    def default_topic(self):
+        return _("Other")
+
+    def topic(self):
+        return self.default_topic()
+
+
 #.
-#   .--Overridable---------------------------------------------------------.
-#   |         ___                      _     _       _     _               |
-#   |        / _ \__   _____ _ __ _ __(_) __| | __ _| |__ | | ___          |
-#   |       | | | \ \ / / _ \ '__| '__| |/ _` |/ _` | '_ \| |/ _ \         |
-#   |       | |_| |\ V /  __/ |  | |  | | (_| | (_| | |_) | |  __/         |
-#   |        \___/  \_/ \___|_|  |_|  |_|\__,_|\__,_|_.__/|_|\___|         |
+#   .--EditableUIElement---------------------------------------------------.
+#   |                 _____    _ _ _        _     _                        |
+#   |                | ____|__| (_) |_ __ _| |__ | | ___                   |
+#   |                |  _| / _` | | __/ _` | '_ \| |/ _ \                  |
+#   |                | |__| (_| | | || (_| | |_) | |  __/                  |
+#   |                |_____\__,_|_|\__\__,_|_.__/|_|\___|                  |
 #   |                                                                      |
 #   +----------------------------------------------------------------------+
-#   |  Base class for things that the user can override by cloning and     |
-#   |  editing and where the user might also create complete new types.    |
-#   |  Examples: views, dashboards, graphs collections                     |
+#   |  Editable UIElement - one where the user can edit parameters, can    |
+#   |  create and delete instances and so on. Also contains the code for   |
+#   |  overriding existing elements with the same name (e.g. views)        |
 #   '----------------------------------------------------------------------'
 
-class Overridable:
+class EditableUIElement(UIElement):
+    def __init__(self):
+        UIElement.__init__(self)
+
     @classmethod
-    def parameters(self, clazz):
-        if clazz.has_overriding_permission("publish"):
-            return [( _("General Properties"), [
-                ( 2.2, 'public', Checkbox(
-                    title = _("Visibility"),
-                    label = _('Make available for all users')
-                )),
-            ])]
-        else:
-            return []
+    def page_handlers(self):
+        return super(EditableUIElement).page_handlers() + [
+            ( "%ss" % self.type_name(),     lambda: self.page_list() ),
+            ( "edit_%s" % self.type_name(), lambda: self.page_edit() ),
+        ]
 
-    def page_header(self):
-        header = self.phrase("title") + " - " + self.title()
-        if not self.is_mine():
-            header += " (%s)" % self.owner()
-        return header
+    @classmethod
+    def declare_permissions(self):
+        super(EditableUIElement).declare_permissions()
+        config.declare_permission("general.edit_" + self.type_name(),
+             _("Customize %s and use them") % self.phrase("title_plural"),
+             _("Allows to create own %s, customize builtin %s and use them.") % (self.phrase("title_plural"), self.phrase("title_plural")),
+             [ "admin", "user" ])
 
-    # Checks wether a page is publicly visible. This does not only need a flag
-    # in the page itself, but also the permission from its owner to publish it.
-    def is_public(self):
-        return self._["public"] and (
+        config.declare_permission("general.publish_" + self.type_name(),
+             _("Publish %s") % self.phrase("title_plural"),
+             _("Make %s visible and usable for other users.") % self.phrase("title_plural"),
+             [ "admin", "user" ])
+
+        config.declare_permission("general.see_user_" + self.type_name(),
+             _("See user %s") % self.phrase("title_plural"),
+             _("Is needed for seeing %s that other users have created.") % self.phrase("title_plural"),
+             [ "admin", "user", "guest" ])
+
+        config.declare_permission("general.force_" + self.type_name(),
+             _("Modify builtin %s") % self.phrase("title_plural"),
+             _("Make own published %s override builtin %s for all users.") % (self.phrase("title_plural"), self.phrase("title_plural")),
+             [ "admin" ])
+
+        config.declare_permission("general.delete_foreign_" + self.type_name(),
+             _("Delete foreign %s") % self.phrase("title_plural"),
+             _("Allows to delete %s created by other users.") % self.phrase("title_plural"),
+             [ "admin" ])
+
+
+    @classmethod
+    def parameter_valuespecs(self):
+        parameters = [ ( _("General Properties"), [
+            ( 1.1, 'name', ID(
+                title = _('Unique ID'),
+                help = _("The ID will be used do identify this page in URLs. If this page has the "
+                         "same ID as a builtin page of the type <i>%s</i> then it will shadow the builtin one.") % self.phrase("title"),
+            )),
+            ( 1.2, 'title', TextUnicode(
+                title = _('Title') + '<sup>*</sup>',
+                size = 50,
+                allow_empty = False,
+            )),
+            ( 1.3, 'description', TextAreaUnicode(
+                title = _('Description') + '<sup>*</sup>',
+                help = _("The description is optional and can be used for explainations or documentation"),
+                rows = 4,
+                cols = 50,
+            )),
+            ( 1.4, 'topic', TextUnicode(
+                title = _('Topic') + '<sup>*</sup>',
+                size = 50,
+                allow_empty = False,
+            )),
+        ])]
+
+        if self.has_overriding_permission("publish"):
+            parameters += [
+                ( _("General Properties"), [
+                    ( 2.2, 'public', Checkbox(
+                      title = _("Visibility"),
+                      label = _('Make available for all users')
+                    ))]
+                ),
+            ]
+
+        return parameters
+
+
+    @classmethod
+    def collect_parameters(self):
+        topics = {}
+        for topic, elements in clazz.parameters(self):
+            el = topics.setdefault(topic, [])
+            el += elements
+
+        # Sort topics and elements in the topics
+        for topic in topics.values():
+            topic.sort()
+
+        sorted_topics = topics.items()
+        sorted_topics.sort(cmp = lambda t1, t2: cmp(t1[1][0], t2[1][0]))
+
+        # Now remove order numbers. Also drop the topic completely
+        # for the while
+        # TODO: Reenable topic as soon as we have the first page type
+        # with more than one topic
+        parameters = []
+        for topic, elements in sorted_topics:
+            for order, key, vs in elements:
+                parameters.append((key, vs))
+
+        return parameters
+
+
+    def is_visible_for_all_users(self):
+        return self.is_public() and (
             not self.owner() or config.user_may(self.owner(), "general.publish_" + self.type_name()))
 
     # Same, but checks if the owner has the permission to override builtin views
-    def is_public_forced(self):
-        return self.is_public() and \
+    def is_forced_by_admin(self):
+        return self.is_visible_for_all_users() and \
           config.user_may(self.owner(), "general.force_" + self.type_name())
-
-    def is_hidden(self):
-        return self._.get("hidden", False)
 
     # Derived method for conveniance
     def is_builtin(self):
@@ -359,9 +388,6 @@ class Overridable:
 
     def is_mine(self):
         return self.owner() == config.user_id
-
-    def owner(self):
-        return self._["owner"]
 
     # Checks if the current user is allowed to see a certain page
     # TODO: Wie is die Semantik hier genau? Umsetzung vervollständigen!
@@ -453,34 +479,6 @@ class Overridable:
 
 
     @classmethod
-    def declare_permissions(self):
-        config.declare_permission("general.edit_" + self.type_name(),
-             _("Customize %s and use them") % self.phrase("title_plural"),
-             _("Allows to create own %s, customize builtin %s and use them.") % (self.phrase("title_plural"), self.phrase("title_plural")),
-             [ "admin", "user" ])
-
-        config.declare_permission("general.publish_" + self.type_name(),
-             _("Publish %s") % self.phrase("title_plural"),
-             _("Make %s visible and usable for other users.") % self.phrase("title_plural"),
-             [ "admin", "user" ])
-
-        config.declare_permission("general.see_user_" + self.type_name(),
-             _("See user %s") % self.phrase("title_plural"),
-             _("Is needed for seeing %s that other users have created.") % self.phrase("title_plural"),
-             [ "admin", "user", "guest" ])
-
-        config.declare_permission("general.force_" + self.type_name(),
-             _("Modify builtin %s") % self.phrase("title_plural"),
-             _("Make own published %s override builtin %s for all users.") % (self.phrase("title_plural"), self.phrase("title_plural")),
-             [ "admin" ])
-
-        config.declare_permission("general.delete_foreign_" + self.type_name(),
-             _("Delete foreign %s") % self.phrase("title_plural"),
-             _("Allows to delete %s created by other users.") % self.phrase("title_plural"),
-             [ "admin" ])
-
-
-    @classmethod
     def has_overriding_permission(self, how):
         return config.may("general.%s_%s" % (how, self.type_name()))
 
@@ -490,33 +488,44 @@ class Overridable:
             raise MKAuthException(_("Sorry, you lack the permission. Operation: %s, table: %s") % (
                                     how, self.phrase("title_plural")))
 
-    # Return all pages visible to the user, implements shadowing etc.
+    # Return all elements visible to the user, implements shadowing etc.
     @classmethod
-    def pages(self):
+    def elements_seen_by_user(self):
         self.load()
-        pages = {}
+        elements = {}
+        elements.update(self.builtin_elements_seen_by_user())
+        elements.update(self.foreign_elements_seen_by_user())
+        elements.update(self.admins_elements_seen_by_user())
+        elements.update(self.own_elements_seen_by_user())
+        return sorted(elements.values(), cmp = lambda a, b: cmp(a.title(), b.title()))
 
-        # Builtin pages
-        for page in self.instances():
-            if page.is_public() and page.may_see() and page.is_builtin():
-                pages[page.name()] = page
+    def builtin_elements_seen_by_user(self):
+        elements = {}
+        for element in self.instances():
+            if element.is_builtin() and element.may_see():
+                elements[element.name()] = element
+        return elements
 
-        # Public pages by normal other users
-        for page in self.instances():
-            if page.is_public() and page.may_see():
-                pages[page.name()] = page
+    def foreign_elements_seen_by_user(self):
+        elements = {}
+        for element in self.instances():
+            if element.is_visible_for_all_users() and element.may_see():
+                elements[element.name()] = element
+        return elements
 
-        # Public pages by admin users, forcing their versions over others
-        for page in self.instances():
-            if page.is_public() and page.may_see() and page.is_public_forced():
-                pages[page.name()] = page
+    def admins_elements_seen_by_user(self):
+        elements = {}
+        for element in self.instances():
+            if element.is_public() and element.may_see() and element.is_forced_by_admin():
+                elements[element.name()] = element
+        return elements
 
-        # My own pages
-        for page in self.instances():
-            if page.is_mine() and config.may("general.edit_" + self.type_name()):
-                pages[page.name()] = page
-
-        return sorted(pages.values(), cmp = lambda a, b: cmp(a.title(), b.title()))
+    def own_elements_seen_by_user(self):
+        elements = {}
+        for element in self.instances():
+            if element.is_mine() and config.may("general.edit_" + self.type_name()):
+                elements[element.name()] = element
+        return elements
 
 
     # Find a page by name, implements shadowing and
@@ -530,20 +539,20 @@ class Overridable:
         builtin = None
         foreign = None
 
-        for page in self.instances():
-            if page.name() != name:
+        for element in self.instances():
+            if element.name() != name:
                 continue
 
-            if page.is_mine() and config.may("general.edit_" + self.type_name()):
-                mine = page
+            if element.is_mine() and config.may("general.edit_" + self.type_name()):
+                mine = element
 
-            elif page.is_public() and page.may_see():
-                if page.is_public_forced():
-                    forced = page
-                elif page.is_builtin():
-                    builtin = page
+            elif element.is_visible_for_all_users() and element.may_see():
+                if element.is_forced_by_admin():
+                    forced = element
+                elif element.is_builtin():
+                    builtin = element
                 else:
-                    foreign = page
+                    foreign = element
 
         if mine:
             return mine
@@ -617,13 +626,15 @@ class Overridable:
     def add_page(self, new_page):
         self.add_instance((new_page.owner(), new_page.name()), new_page)
 
-    def clone(self):
-        page_dict = {}
-        page_dict.update(self._)
-        page_dict["owner"] = config.user_id
-        new_page = self.__class__(page_dict)
-        self.add_page(new_page)
-        return new_page
+    ### def clone(self):
+    ###     new_element = self.create_clone_for_user(config.user_id)
+
+    ###     page_dict = {}
+    ###     page_dict.update(self._)
+    ###     page_dict["owner"] = config.user_id
+    ###     new_page = self.__class__(page_dict)
+    ###     self.add_page(new_page)
+    ###     return new_page
 
     @classmethod
     def declare_permission(self, page):
@@ -855,84 +866,14 @@ class Overridable:
         html.footer()
         return
 
-#.
-#   .--ContextAware--------------------------------------------------------.
-#   |    ____            _            _      _                             |
-#   |   / ___|___  _ __ | |_ _____  _| |_   / \__      ____ _ _ __ ___     |
-#   |  | |   / _ \| '_ \| __/ _ \ \/ / __| / _ \ \ /\ / / _` | '__/ _ \    |
-#   |  | |__| (_) | | | | ||  __/>  <| |_ / ___ \ V  V / (_| | | |  __/    |
-#   |   \____\___/|_| |_|\__\___/_/\_\\__/_/   \_\_/\_/ \__,_|_|  \___|    |
-#   |                                                                      |
-#   +----------------------------------------------------------------------+
-#   |  Any subclass of this is aware of contexts. That means that for      |
-#   |  rendering it or otherwise bringing it into action we always need    |
-#   |  a context (i.e. bunch of Selectors). ContextAware elements have a   |
-#   |  list of "single infos". Example: a view that shows exactly one host |
-#   |  has the single info "host".                                         |
-#   |  ContextAwares also can have an intrinsic context. In that case the  |
-#   |  key "context" must be present in the elements dict.                 |
-#   '----------------------------------------------------------------------'
-
-
-class ContextAware(Element):
-    # Return a list of infos that this element is about. For views this comes
-    # from the datasource
+    # Overrdide this methods in you actual subclass
     @mandatory
-    def infos(self):
+    def is_hidden(self):
         pass
 
-    # Return the list of single infos of this element (i.e. to what information
-    # it is specific. In most cases this is [], [ "host" ], or [ "host", "service"].
-    # single_infos() is of course a subset of infos()
     @mandatory
-    def single_infos(self):
+    def owner(self):
         pass
-
-    # Return the intrinsic context of a ContextAware. This is taken from
-    # the dict variable "context" if that is present. An empty context
-    # is being returned if that is missing.
-    def get_intrinsic_context(self):
-        return Context(self.infos(), self.single_infos(), self._.get("context", {}))
-
-    def unsatisfied_single_infos(self):
-        return self.get_intrinsic_context().unsatisfied_single_infos()
-
-    # Construct a context from current URL variables. This takes infos and
-    # single infos into account.
-    # TODO: Should this be moved to ContextProvider?
-    def get_context_from_url(self):
-        context_dict = {}
-        for selector in Selector.instances():
-            if selector.info() in self.infos() and \
-               selector.is_active():
-               context_dict[selector.name()] = selector.get_selector_context_from_url()
-        return Context(self.infos(), self.single_infos(), context_dict)
-
-    # Construct a context from one row of the results of a datasource query
-    def get_context_from_row(self, row):
-        context_dict = {}
-        for info_name in self.single_infos():
-            info = Info.instance(info_name)
-            context_dict.update(info.context_from_row(row))
-        return Context(self.infos(), self.single_infos(), context_dict)
-
-
-    def validate_single_infos(self, context):
-        for info_name in self.single_infos():
-            if info_name not in context:
-                raise MKGeneralException(_("This %s cannot be rendered. It is missing "
-                                           "the specification of \"<b>%s</b>\"." %
-                                           (self.phrase("title"), Info.instance(info_name).title())))
-
-    # Combine the intrinsic context (aka hard coded selectors in the view)
-    # and the context from the outside (e.g. from URL or from report
-    # or from dashboard). Both context types share the same infos and
-    # single infos. The context from the URL has precedence.
-    def build_inner_context(self, external_context):
-        context = self.get_intrinsic_context()
-        context.update(external_context)
-        self.validate_single_infos(context)
-        return context
 
 
 #.
@@ -949,7 +890,7 @@ class ContextAware(Element):
 #   |  pages.
 #   '----------------------------------------------------------------------'
 
-class PageRenderer:
+class PageRenderer(EditableUIElement):
     # Stuff to be overridden by the implementation of actual page types
 
     # TODO: Das von graphs.py rauspfluecken. Also alles, was man
@@ -963,18 +904,15 @@ class PageRenderer:
     # First look for "name" and then for "view_name" if "name" is
     # missing.
     @classmethod
-    def ident_attr(self):
+    def url_variable_for_page_name(self):
         return "name"
-
-    def topic(self):
-        return self._.get("topic", _("Other"))
 
     # Helper functions for page handlers and render function
     def page_header(self):
         return self.phrase("title") + " - " + self.title()
 
     def page_url(self, add_vars=[]):
-        return html.makeuri_contextless([(self.ident_attr(), self.name())] + add_vars, filename = "%s.py" % self.type_name())
+        return html.makeuri_contextless([(self.url_variable_for_page_name(), self.name())] + add_vars, filename = "%s.py" % self.type_name())
 
     @classmethod
     def global_page_links_by_topic(self):
@@ -986,6 +924,7 @@ class PageRenderer:
         return self.sort_by_topic(by_topic.items())
 
     @classmethod
+    # TODO: Sieht nicht aus, als wäre das hier eine gute Stelle für die Reihenfolge von Topics
     def sort_by_topic(self, topic_items):
         topic_order = [
             _("Overview"),
@@ -1006,21 +945,17 @@ class PageRenderer:
 
         return sorted(topic_items, cmp = cmp_topic)
 
-    # Parameters special for pgge renderers. These can be added to the sidebar,
+    # Parameters special for page renderers. These can be added to the sidebar,
     # so we need a topic and a checkbox for the visibility
     @classmethod
-    def parameters(self, clazz):
-        return [(_("General Properties"), [
-            ( 1.4, 'topic', TextUnicode(
-                title = _('Topic') + '<sup>*</sup>',
-                size = 50,
-                allow_empty = False,
-            )),
-            ( 2.0, 'hidden', Checkbox(
-                title = _("Sidebar integration"),
-                label = _('Do not add a link to this page in sidebar'),
-            )),
-        ])]
+    def parameters(self):
+        return super(PageRenderer).parameters() + \
+            [(_("General Properties"), [
+                ( 2.0, 'hidden', Checkbox(
+                    title = _("Sidebar integration"),
+                    label = _('Do not add a link to this page in sidebar'),
+                )),
+            ])]
 
 
     # Define page handlers for the neccessary pages like listing all pages, editing
@@ -1034,11 +969,8 @@ class PageRenderer:
     # hier doch garnicht hin!
     @classmethod
     def page_handlers(self):
-        return {
-            "%ss" % self.type_name()     : lambda: self.page_list(),
-            "edit_%s" % self.type_name() : lambda: self.page_edit(),
-            self.type_name()             : lambda: self.page_show(),
-        }
+        return super(PageRenderer).page_handlers() + \
+            [ (self.type_name(), lambda: self.page_show()) ]
 
     @classmethod
     def global_page_links(self):
@@ -1092,6 +1024,9 @@ class PageRenderer:
         self.header_button(_("Show this page with the sidebar"),
                 html.makeuri([("start_url", html.makeuri([]))], filename="index.py"), "pageurl", target="_top")
 
+    # .--------------------------------------------------------------------.
+    # | Implementation of UIElement                                        |
+    # '--------------------------------------------------------------------'
 
 #.
 #   .--ContextAwarePageRenderer--------------------------------------------.
@@ -1309,39 +1244,36 @@ class Container:
 
 
 #.
-#   .--Infos---------------------------------------------------------------.
-#   |                       ___        __                                  |
-#   |                      |_ _|_ __  / _| ___  ___                        |
-#   |                       | || '_ \| |_ / _ \/ __|                       |
-#   |                       | || | | |  _| (_) \__ \                       |
-#   |                      |___|_| |_|_|  \___/|___/                       |
-#   |                                                                      |
+#   .--ObjectType----------------------------------------------------------.
+#   |           ___  _     _           _  _____                            |
+#   |          / _ \| |__ (_) ___  ___| ||_   _|   _ _ __   ___            |
+#   |         | | | | '_ \| |/ _ \/ __| __|| || | | | '_ \ / _ \           |
+#   |         | |_| | |_) | |  __/ (__| |_ | || |_| | |_) |  __/           |
+#   |          \___/|_.__// |\___|\___|\__||_| \__, | .__/ \___|           |
+#   |                   |__/                   |___/|_|                    |
 #   +----------------------------------------------------------------------+
-#   |  An info is something like a database table. Examples are "host" or  |
-#   |  "service". The Livestatus table "service" provides the infos "host" |
-#   |  and "service", though! A Livestatus "table" is like a database view |
-#   |  that joins possible several tables.                                 |
+#   |  An ObjectType is one if the Check_MK object types of the things in  |
+#   |  monitoring. Here are examples of some prominent object types:       |
+#   |  - Host                                                              |
+#   |  - Service                                                           |
+#   |  - Downtime                                                          |
+#   |  - Comment                                                           |
+#   |  - Contact                                                           |
+#   |  - LogEntry                                                          |
+#   |  - BIAggregate                                                       |
+#   |  Because the various object types are visible for the user they are  |
+#   |  UIElements.
 #   '----------------------------------------------------------------------'
 
-class Info(Element):
+class ObjectType(UIElement):
     # Mandatory arguments are:
     # name         : unique name, like "host"
     # title        : l18n'ed title for the user
     # title_plural : the same but in plural
     # selector     : the name of a selector for identifying one object of this ifno
     def __init__(self, **kwargs):
-        Element.__init__(self, kwargs)
-
-    @classmethod
-    def type_name(self):
-        return "info"
-
-    @classmethod
-    def phrase(self, what):
-        return {
-            "title"          : _("Info"),
-            "title_plural"   : _("Infos"), # TODO: Present the user a better name for this
-        }.get(what, Element.phrase(what))
+        UIElement.__init__(self)
+        self._ = kwargs
 
     def key_columns(self):
         return self._.get("key_columns", [])
@@ -1354,12 +1286,282 @@ class Info(Element):
         return selector.heading_info(selector_context)
 
 
+    # .--------------------------------------------------------------------.
+    # | Implementation of UIElement                                        |
+    # '--------------------------------------------------------------------'
+
+    @classmethod
+    def type_name(self):
+        return "object_type"
+
+    @classmethod
+    def phrase(self, what):
+        return {
+            "title"          : _("Object Type"),
+            "title_plural"   : _("Object Types"),
+        }[what]
+
+    def name(self):
+        return self._["name"]
+
+    def title(self):
+        return self._["title"]
+
+    def description(self):
+        return self._["description"]
+
+    def default_topic(self):
+        return _("Monitoring objects")
+
+    def topic(self):
+        return self.default_topic()
+
+register_ui_element_type(ObjectType)
 
 
-register_element_type(Info)
+#.
+#   .--Datasource----------------------------------------------------------.
+#   |          ____        _                                               |
+#   |         |  _ \  __ _| |_ __ _ ___  ___  _   _ _ __ ___ ___           |
+#   |         | | | |/ _` | __/ _` / __|/ _ \| | | | '__/ __/ _ \          |
+#   |         | |_| | (_| | || (_| \__ \ (_) | |_| | | | (_|  __/          |
+#   |         |____/ \__,_|\__\__,_|___/\___/ \__,_|_|  \___\___|          |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |  A datasource is like a database view. It provides a table of data.  |
+#   |  The table can - but need not - have its origin in a Livestatus      |
+#   |  query.
+#   '----------------------------------------------------------------------'
 
-def register_info(info):
-    Info.add_instance(info.name(), info)
+class Datasource(UIElement):
+    def __init__(self, **kwargs):
+        UIElement.__init__(self)
+        self._ = kwargs
+        self._object_types = [ ObjectType.instance(otn) for otn in kwargs["object_types"] ]
+
+    def object_types(self):
+        return self._object_types
+
+    def main_object_type(self):
+        return self._object_types[0]
+
+    def key_columns(self):
+        columns = []
+        for object_type in self.object_types():
+            columns += object_type.key_columns()
+        return columns
+
+    # Columns that the datasource always queries and provides
+    def implicit_columns(self):
+        return self.key_columns()
+
+
+    # Central method of all: fetch the actual data rows. Columns is a list
+    # of column names. Returns a list of rows. Each row is a dictionary.
+    # TODO: Hierbei muss das Limit berücksichtigt werden.
+    def query(self, columns, context, limit=None):
+        rows = self.do_query(columns, context, limit)
+        return context.select_rows(rows, context) # Non-livestatus filtering
+
+    # Override this in order to perform the actual data retreiving
+    @mandatory
+    def do_query(self, columns, context, limit=None):
+        pass
+
+    # Create a context from the information of a row queried from our data
+    # source. We e.g. need this for creating links to other table views in
+    # the cells of table views.
+    def context_from_row(self, row, single_infos):
+        return {}
+
+
+
+    # .--------------------------------------------------------------------.
+    # | Implementation of UIElement                                        |
+    # '--------------------------------------------------------------------'
+
+    @classmethod
+    def type_name(self):
+        return "datasource"
+
+    @classmethod
+    def phrase(self, what):
+        return {
+            "title"          : _("Datasource"),
+            "title_plural"   : _("Datasources"),
+        }[what]
+
+    def name(self):
+        return self._["name"]
+
+    def title(self):
+        return self._["title"]
+
+    def description(self):
+        return self._["description"]
+
+    def default_topic(self):
+        return _("Monitoring status")
+
+    def topic(self):
+        return self.default_topic()
+
+
+
+elements.register_element_type(Datasource)
+
+
+class LivestatusDatasource(Datasource):
+    def __init__(self, **kwargs):
+        Datasource.__init__(self, kwargs)
+
+    def do_query(self, columns, context, limit=None):
+        columns = columns + self.implicit_columns()
+
+        # TODO:
+        # - Selektoren
+        # - Additional headers
+        # - Single Infos
+        # - Site hint
+        # - Das was keys und idkeys in den datasources machen. Da haben wir
+        #   aktuell Duplikate!
+        # - Implizite site-Spalte entfernen, falls vorhanden. Noch besser: verhindern,
+        #   dass sie rein kommt
+        # - Move global method do_query_data() here.
+
+        if "site" in columns:
+            columns.remove("site")
+
+        columns = list(set(columns))
+
+        if "site" in context:
+            only_sites = [ context["site"] ]
+            html.live.set_only_sites(only_sites)
+
+        query = "GET %s\n" % self._["table"]
+        query += "Columns: %s\n" % " ".join(columns)
+        query += context.livestatus_filters()
+        query += self.implicit_livestatus_headers()
+
+        # Tell Livestatus client module to create an artificial column with the site
+        html.live.set_prepend_site(True)
+
+        if limit != None:
+            html.live.set_limit(limit + 1) # + 1: We need to know, if limit is exceeded
+
+        if config.debug_livestatus_queries \
+                and html.output_format == "html" and 'W' in html.display_options:
+            html.write('<div class="livestatus message">'
+                       '<tt>%s</tt></div>\n' % (query.replace('\n', '<br>\n')))
+
+        # TODO: query() sollte only_sites als Argument bekommen! Und auch prepend und limit
+        data = html.live.query(query)
+        html.live.set_only_sites(None)
+        html.live.set_prepend_site(False)
+        html.live.set_limit() # removes limit
+
+        # TODO: Merging: Bei Abfrage von Hostgruppen von mehreren Sites, die
+        # Anzahlen aufaddieren. Dann macht auch die "site" Spalte keinen Sinn.
+        # Brauchen wir dafür evtl. eigene Datasources? Wir haben das ja nur
+        # bei Host- und Servicegruppen.
+        # if merge_column:
+        #     data = merge_data(data, columns)
+
+        # Convert lists-rows into dictionaries.
+        columns = [ "site" ] + columns
+        return [ dict(zip(columns, row)) for row in data ]
+
+    def implicit_livestatus_headers(self):
+        return self._.get("livestatus_headers", "")
+
+
+# Special case for table containing host data: add inventory information
+class LivestatusHostDatasource(LivestatusDatasource):
+    def __init__(self, **kwargs):
+        LivestatusDatasource.__init__(self, **kwargs)
+        self._datasource = LivestatusDatasource(**kwargs) # TODO: braucht man nicht mehr
+
+    def do_query(self, columns, context, limit=None):
+        host_columns, required_services, required_service_columns = self.split_columns_into_host_and_joins(columns)
+
+        # TODO: Hier kann ich mit super(LivestatusDatasource, self).query(host_columns, context, limit)
+        # TODO: dazu muss elements on object erben.
+        rows = self._datasource.query(host_columns, context, limit)
+        if "host_inventory" in columns:
+            for row in rows:
+                row["host_inventory"] = inventory.host(row["host_name"])
+
+        if required_services:
+            self.add_service_information_to_rows(rows, required_services, required_service_columns)
+        return rows
+
+
+    def split_columns_into_host_and_joins(self, columns):
+        host_columns = set([])
+        required_services = []
+        required_service_columns = set([])
+        for column in columns:
+            if type(column) == tuple: # .e.g ( "CPU load", [ "perfdata", "service_description" ] )
+                service_description, required_columns = column
+                required_services.append(service_description)
+                required_service_columns.update(required_columns)
+            else:
+                host_columns.add(column)
+
+        return list(host_columns), required_services, list(required_service_columns)
+
+
+    def add_service_information_to_rows(self, rows, required_services, required_service_columns):
+        query = "GET services\n" \
+                "Columns: host_name service_description %s\n" % " ".join(required_service_columns)
+
+        # Select services
+        for service_description in required_services:
+            query += "Filter: service_description = %s\n" % service_description
+        query += "Or: %d\n" % len(required_services)
+
+        # Limit to hosts
+        only_sites = set([])
+        for row in rows:
+            query += "Filter: host_name = %s\n" % row["host_name"]
+            only_sites.add(row["site"])
+        query += "Or: %d\n" % len(rows)
+
+        # Fetch data via Livestatus, only from relevant sites
+        only_sites = list(only_sites)
+        if only_sites == [ None ]:
+            only_sites = None
+        html.live.set_prepend_site(True)
+        html.live.set_only_sites(only_sites)
+        data = html.live.query(query)
+        html.live.set_only_sites(None)
+        html.live.set_prepend_site(False)
+
+        # Create a lookup table from site/host to found services
+        by_host = {}
+        headers = [ "site", "host_name", "service_description" ] + required_service_columns
+        for entry in data:
+            row = dict(zip(headers, entry))
+            site_host = (row["site"], row["host_name"])
+            service_description = row["service_description"]
+            by_host.setdefault(site_host, {})[service_description] = row
+
+        # Add service information to rows
+        for row in rows:
+            site_host = (row["site"], row["host_name"])
+            join = row.setdefault("JOIN", {})
+            for service_description, service_row in by_host.get(site_host, {}).items():
+                join[service_description] = service_row
+
+
+
+def register_datasource(datasource):
+    Datasource.add_instance(datasource.name(), datasource)
+
+def get_datasource(datasource_name):
+    return Datasource.instance(datasource_name)
+
+
 
 #.
 #   .--Selectors-----------------------------------------------------------.
@@ -1517,6 +1719,8 @@ def register_selector(selector):
 class Context(Element):
     # TODO: Müsste es hier nicht info_names und single_info_names heißen?
     # Oder arbeitet man gleich mit den Referenzen auf die Info-Objekte?
+    # TODO: Wir arbeiten hier direkt mit den ObjectType objekten, nicht
+    # mehr mit deren Namen. Und Umbenennen von info -> object_type
     def __init__(self, infos, single_infos, context_dict):
         self._single_infos = single_infos
         self._infos = infos
@@ -1608,4 +1812,181 @@ class Context(Element):
         return " / ".join(components)
 
 
+
+#.
+#   .--ContextAware--------------------------------------------------------.
+#   |    ____            _            _      _                             |
+#   |   / ___|___  _ __ | |_ _____  _| |_   / \__      ____ _ _ __ ___     |
+#   |  | |   / _ \| '_ \| __/ _ \ \/ / __| / _ \ \ /\ / / _` | '__/ _ \    |
+#   |  | |__| (_) | | | | ||  __/>  <| |_ / ___ \ V  V / (_| | | |  __/    |
+#   |   \____\___/|_| |_|\__\___/_/\_\\__/_/   \_\_/\_/ \__,_|_|  \___|    |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |  Any subclass of this is aware of contexts. That means that for      |
+#   |  rendering it or otherwise bringing it into action we always need    |
+#   |  a context (i.e. bunch of Selectors). ContextAware elements have a   |
+#   |  list of "single infos". Example: a view that shows exactly one host |
+#   |  has the single info "host".                                         |
+#   |  ContextAwares also can have an intrinsic context. In that case the  |
+#   |  key "context" must be present in the elements dict.                 |
+#   '----------------------------------------------------------------------'
+
+
+class ContextAware(object):
+    # Return a list of infos that this element is about. For views this comes
+    # from the datasource
+    @mandatory
+    def infos(self):
+        pass
+
+    # Return the list of single infos of this element (i.e. to what information
+    # it is specific. In most cases this is [], [ "host" ], or [ "host", "service"].
+    # single_infos() is of course a subset of infos()
+    @mandatory
+    def single_infos(self):
+        pass
+
+    # Return the intrinsic context of a ContextAware. This is taken from
+    # the dict variable "context" if that is present. An empty context
+    # is being returned if that is missing.
+    def get_intrinsic_context(self):
+        return Context(self.infos(), self.single_infos(), self._.get("context", {}))
+
+    def unsatisfied_single_infos(self):
+        return self.get_intrinsic_context().unsatisfied_single_infos()
+
+    # Construct a context from current URL variables. This takes infos and
+    # single infos into account.
+    # TODO: Should this be moved to ContextProvider?
+    def get_context_from_url(self):
+        context_dict = {}
+        for selector in Selector.instances():
+            if selector.info() in self.infos() and \
+               selector.is_active():
+               context_dict[selector.name()] = selector.get_selector_context_from_url()
+        return Context(self.infos(), self.single_infos(), context_dict)
+
+    # Construct a context from one row of the results of a datasource query
+    def get_context_from_row(self, row):
+        context_dict = {}
+        for info_name in self.single_infos():
+            info = Info.instance(info_name)
+            context_dict.update(info.context_from_row(row))
+        return Context(self.infos(), self.single_infos(), context_dict)
+
+
+    def validate_single_infos(self, context):
+        for info_name in self.single_infos():
+            if info_name not in context:
+                raise MKGeneralException(_("This %s cannot be rendered. It is missing "
+                                           "the specification of \"<b>%s</b>\"." %
+                                           (self.phrase("title"), Info.instance(info_name).title())))
+
+    # Combine the intrinsic context (aka hard coded selectors in the view)
+    # and the context from the outside (e.g. from URL or from report
+    # or from dashboard). Both context types share the same infos and
+    # single infos. The context from the URL has precedence.
+    def build_inner_context(self, external_context):
+        context = self.get_intrinsic_context()
+        context.update(external_context)
+        self.validate_single_infos(context)
+        return context
+
+
+#.
+#   .--FOO-----------------------------------------------------------------.
+#   |                          _____ ___   ___                             |
+#   |                         |  ___/ _ \ / _ \                            |
+#   |                         | |_ | | | | | | |                           |
+#   |                         |  _|| |_| | |_| |                           |
+#   |                         |_|   \___/ \___/                            |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |                                                                      |
+#   '----------------------------------------------------------------------'
+class XXXElement(object):
+    def __init__(self, d):
+        object.__init__(self)
+        # The dictionary with the name _ holds all information about
+        # the page in question - as a dictionary that can be loaded
+        # and saved to files using repr().
+        self._ = d
+
+        # Now give all subclasses that chance to add mandatory keys in that
+        # dictionary in case they are missing.
+        # TODO: Check, if this can be done with super() instead of inspect.
+        for clazz in inspect.getmro(self.__class__)[::-1]:
+            if "sanitize" in clazz.__dict__:
+                clazz.sanitize(d)
+
+    @mandatory
+    @classmethod
+    def type_name(self):
+        pass
+
+    @classmethod
+    def type_icon(self):
+        return self.type_name()
+
+    def internal_representation(self):
+        return self._
+
+    # TODO: remove this hack
+    def __repr__(self):
+        return repr(self._)
+
+    # TODO: remove this hack
+    def __getitem__(self, key):
+        return self._[key]
+
+    # TODO: remove this hack
+    def __contains__(self, key):
+        return key in self._
+
+    # TODO: remove this hack
+    # def pformat(self):
+    #     return self.type_name() + ": " + pprint.pformat(self._)
+
+    # You always must override the following method. Not all phrases
+    # might be neccessary depending on the type of you page.
+    # Possible phrases:
+    # "title"        : Title of one instance
+    # "title_plural" : Title in plural
+    # "add_to"       : Text like "Add to foo bar..."
+    # TODO: Look at GraphCollection for the complete list of phrases to
+    # be defined for each page type and explain that here.
+    @classmethod
+    def phrase(self, phrase):
+        return "%s: %s" % (phrase, self.type_name())
+
+    # You can override this if you class needs any permissions to
+    # be declared. Note: currently only *one* of the classes in the
+    # inheritance tree can override this method. If we need to change
+    # this we can do this like in __init__ with sanitize...
+    @classmethod
+    def declare_permissions(self):
+        pass
+
+
+    # Object methods that *can* be overridden - for cases where
+    # that pages in question of a dictionary format that is not
+    # compatible.
+    def name(self):
+        return self._["name"]
+
+    def topic(self):
+        if "topic" in self._:
+            return self._["topic"]
+        else:
+            return self.default_topic()
+
+    def title(self):
+        return self._["title"]
+
+    def description(self):
+        return self._.get("description", "")
+
+    @classmethod
+    def default_topic(self):
+        return _("Other")
 

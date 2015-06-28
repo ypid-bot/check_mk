@@ -34,41 +34,6 @@ infos['host'] = {
     ],
 }
 
-# single_spec is being dropped in the new implementation
-# Instead there is the rule, that for each info there must
-# be one selector that has the name of that info. Therefore
-# nothing more needs to be specified here.
-# TODO: Was hier noch fehlt, ist der Weg von einer row zu
-# dem gültigen Selektorkontext. Bauen wir das in den Selektor
-# ein oder lieber in das Info? Würde sagen, in das Info.
-
-register_info(
-    Info(
-        name             = "host",
-        title            = _("Host"),
-        title_plural     = _("Hosts"),
-        # TODO: umbenennen, weil es ja kein Context() liefert, sondern
-        # nur ein partielles dict.
-        context_from_row = lambda row: { "host" : row["host_name"] },
-        key_columns      = [ "host_name" ],
-))
-
-register_info(
-    Info(
-        name             = "service",
-        title            = _("Service"),
-        title_plural     = _("Services"),
-        context_from_row = lambda row: { "service" : row["service_description"] },
-        key_columns      = [ "service_description" ],
-))
-
-register_info(
-    Info(
-        name             = "log",
-        title            = _("Monitoring Log Entry"),
-        title_plural     = _("Monitoring Log Entries"),
-))
-
 infos['log'] = {
     'title'       : _('Log Entry'),
     'title_plural': _('Log Entries'),

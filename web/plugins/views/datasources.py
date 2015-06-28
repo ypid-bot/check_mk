@@ -100,54 +100,51 @@ multisite_datasources["hosts"] = {
     ],
 }
 
-register_datasource(
-    LivestatusHostDatasource(
-        name        = "hosts",
-        title       = _("Hosts"),
-        description = _("Table of all monitored hosts"),
-        table       = "hosts",
-        infos       = [ "host" ],
-    )
-)
+LivestatusHostDatasource(
+    name               = "hosts",
+    title              = _("Hosts"),
+    description        = _("Table of all monitored hosts"),
+    table              = "hosts",
+    object_types       = [ "host" ],
+).register()
 
-register_datasource(
-    LivestatusHostDatasource(
-        name        = "services",
-        title       = _("Services"),
-        description = _("Table of all monitored services"),
-        table       = "services",
-        infos       = [ "service", "host" ], # object type must be first!
-    )
-)
 
-register_datasource(
-    LivestatusHostDatasource(
-      name               = "log",
-      title              = _("Monitoring logfile"),
-      description        = _("Table of all historic monitoring events"),
-      table              = "log",
-      infos              = [ "log", "host", "service", "contact", "command" ],
-))
+LivestatusHostDatasource(
+    name               = "services",
+    title              = _("Services"),
+    description        = _("Table of all monitored services"),
+    table              = "services",
+    object_types       = [ "service", "host" ],
+).register()
 
-register_datasource(
-    LivestatusHostDatasource(
-      name               = "log_events",
-      title              = _("Monitoring events of hosts and services"),
-      description        = _("Historic monitoring events concerning a host or service"),
-      table              = "log",
-      infos              = [ "log", "host", "service", ],
-      livestatus_headers = "Filter: class = 1\nFilter: class = 3\nOr: 2\n",
-))
 
-register_datasource(
-    LivestatusHostDatasource(
-      name               = "log_host_events",
-      title              = _("Monitoring events of hosts"),
-      description        = _("Historic monitoring events concerning a host"),
-      table              = "log",
-      infos              = [ "log", "host", ],
-      livestatus_headers = "Filter: class = 1\nFilter: class = 3\nOr: 2\nFilter: service_description = \n",
-))
+LivestatusHostDatasource(
+    name               = "log",
+    title              = _("Monitoring logfile"),
+    description        = _("Table of all historic monitoring events"),
+    table              = "log",
+    object_types       = [ "log", "host", "service", "contact", "command" ],
+).register()
+
+
+LivestatusHostDatasource(
+    name               = "log_events",
+    title              = _("Monitoring events of hosts and services"),
+    description        = _("Historic monitoring events concerning a host or service"),
+    table              = "log",
+    object_types       = [ "log", "host", "service", ],
+    livestatus_headers = "Filter: class = 1\nFilter: class = 3\nOr: 2\n",
+).register()
+
+
+LivestatusHostDatasource(
+    name               = "log_host_events",
+    title              = _("Monitoring events of hosts"),
+    description        = _("Historic monitoring events concerning a host"),
+    table              = "log",
+    object_types       = [ "log", "host", ],
+    livestatus_headers = "Filter: class = 1\nFilter: class = 3\nOr: 2\nFilter: service_description = \n",
+).register()
 
 
 multisite_datasources["hostsbygroup"] = {
