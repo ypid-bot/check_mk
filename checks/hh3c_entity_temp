@@ -1,0 +1,270 @@
+#!/usr/bin/python
+# -*- encoding: utf-8; py-indent-offset: 4 -*-
+# +------------------------------------------------------------------+
+# |             ____ _               _        __  __ _  __           |
+# |            / ___| |__   ___  ___| | __   |  \/  | |/ /           |
+# |           | |   | '_ \ / _ \/ __| |/ /   | |\/| | ' /            |
+# |           | |___| | | |  __/ (__|   <    | |  | | . \            |
+# |            \____|_| |_|\___|\___|_|\_\___|_|  |_|_|\_\           |
+# |                                                                  |
+# | Copyright Mathias Kettner 2014             mk@mathias-kettner.de |
+# +------------------------------------------------------------------+
+#
+# This file is part of Check_MK.
+# Copyright by Mathias Kettner and Mathias Kettner GmbH.  All rights reserved.
+#
+# Check_MK is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.
+#
+# Check_MK is  distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY;  without even the implied warranty of
+# MERCHANTABILITY  or  FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have  received  a copy of the  GNU  General Public
+# License along with Check_MK.  If  not, email to mk@mathias-kettner.de
+# or write to the postal address provided at www.mathias-kettner.de
+#
+# @author Robin Schneider <robin.schneider@hamcos.de>
+# @company hamcos IT Service GmbH http://www.hamcos.de
+
+# Tested with:
+#   * HP Comware Platform Software, Software Version 5.20.99 Release 2221P02 HP A5120-48G EI Switch with 2 Interface Slots Copyright (c) 2010-2014 Hewlett-Packard Development Company, L.P.
+#   * HP Comware Platform Software, Software Version 5.20.105, Release 1808P25 HP A5820AF-24XG Switch Copyright (c) 2010-2014 Hewlett-Packard Development Company, L.P.
+#
+# Thresholds can be quired for via:
+# * 1.3.6.1.4.1.25506.2.6.1.1.1.1.13 (hh3cEntityExtTemperatureThreshold): Sometimes set to 65535. Range from 61 to 110.
+# * 1.3.6.1.4.1.25506.2.6.1.1.1.1.17 (hh3cEntityExtCriticalTemperatureThreshold): Sometimes set to 65535. Range from 72 to 130.
+# * 1.3.6.1.4.1.25506.2.6.1.1.1.1.21 (hh3cEntityExtLowerTemperatureThreshold): Was always set to 0.
+# * 1.3.6.1.4.1.25506.2.6.1.1.1.1.22 (hh3cEntityExtShutdownTemperatureThreshold): Was always set to 90.
+# * 1.3.6.1.4.1.25506.2.6.1.1.1.1.29 (hh3cEntityExtCriticalLowerTemperatureThreshold): Not available on tested switches.
+# * 1.3.6.1.4.1.25506.2.6.1.1.1.1.30 (hh3cEntityExtShutdownLowerTemperatureThreshold): Not available on tested switches.
+#
+# Temperature of module 1: 55, warn: 67, critical: 72
+# Temperature of module 1: 54, warn: 61, critical: 66
+# Temperature of module 2: 52, warn: 67, critical: 72
+# Temperature of module 2: 52, warn: 61, critical: 66
+# Temperature of module 3: 44, warn: 67, critical: 72
+# Temperature of module 3: 43, warn: 61, critical: 66
+#
+#
+# [['HP', '65535', '0', '0'],
+#  ['HP A5820AF-24XG Switch Software Version 5.20.105', '65535', '0', '0'],
+#  ['HP A5820AF-24XG Switch Software Version 5.20.105', '65535', '0', '0'],
+#  ['HP A5820AF-24XG Switch Software Version 5.20.105', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '67', '72'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '61', '66'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['CONTAINER LEVEL1', '65535', '0', '0'],
+#  ['MODULE LEVEL1', '55', '0', '0'],
+#  ['PSU', '65535', '0', '0'],
+#  ['PSU', '65535', '0', '0'],
+#  ['FAN UNIT', '65535', '0', '0'],
+#  ['FAN UNIT', '65535', '0', '0'],
+#  ['SENSOR', '55', '67', '72'],
+#  ['SENSOR', '54', '61', '66'],
+#  ['MODULE LEVEL1', '52', '0', '0'],
+#  ['PSU', '65535', '0', '0'],
+#  ['PSU', '65535', '0', '0'],
+#  ['FAN UNIT', '65535', '0', '0'],
+#  ['FAN UNIT', '65535', '0', '0'],
+#  ['SENSOR', '52', '67', '72'],
+#  ['SENSOR', '52', '61', '66'],
+#  ['MODULE LEVEL1', '44', '0', '0'],
+#  ['PSU', '65535', '67', '72'],
+#  ['PSU', '65535', '0', '0'],
+#  ['FAN UNIT', '65535', '67', '72'],
+#  ['FAN UNIT', '65535', '0', '0'],
+#  ['SENSOR', '44', '67', '72'],
+#  ['SENSOR', '43', '61', '66'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['CONTAINER LEVEL2', '65535', '0', '0'],
+#  ['MODULE LEVEL2', '55', '0', '0'],
+#  ['MODULE LEVEL2', '52', '0', '0'],
+#  ['MODULE LEVEL2', '44', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/1', '65535', '67', '72'],
+#  ['Ten-GigabitEthernet1/0/2', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/3', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/4', '65535', '61', '66'],
+#  ['Ten-GigabitEthernet1/0/5', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/6', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/7', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/8', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/9', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/10', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/11', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/12', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/13', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/14', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/15', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/16', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/17', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/18', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/19', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/20', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/21', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/22', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/23', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet1/0/24', '65535', '0', '0'],
+#  ['GigabitEthernet1/0/25', '65535', '0', '0'],
+#  ['GigabitEthernet1/0/26', '65535', '0', '0'],
+#  ['M-GigabitEthernet0/0/0', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/1', '65535', '67', '72'],
+#  ['Ten-GigabitEthernet2/0/2', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/3', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/4', '65535', '61', '66'],
+#  ['Ten-GigabitEthernet2/0/5', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/6', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/7', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/8', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/9', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/10', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/11', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/12', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/13', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/14', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/15', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/16', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/17', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/18', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/19', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/20', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/21', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/22', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/23', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet2/0/24', '65535', '0', '0'],
+#  ['GigabitEthernet2/0/25', '65535', '0', '0'],
+#  ['GigabitEthernet2/0/26', '65535', '0', '0'],
+#  ['M-GigabitEthernet0/0/0', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/1', '65535', '67', '72'],
+#  ['Ten-GigabitEthernet3/0/2', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/3', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/4', '65535', '61', '66'],
+#  ['Ten-GigabitEthernet3/0/5', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/6', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/7', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/8', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/9', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/10', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/11', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/12', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/13', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/14', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/15', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/16', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/17', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/18', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/19', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/20', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/21', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/22', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/23', '65535', '0', '0'],
+#  ['Ten-GigabitEthernet3/0/24', '65535', '0', '0'],
+#  ['GigabitEthernet3/0/25', '65535', '0', '0'],
+#  ['GigabitEthernet3/0/26', '65535', '0', '0'],
+#  ['M-GigabitEthernet0/0/0', '65535', '0', '0']]
+#
+# Example SNMP values:
+# HH3C-ENTITY-EXT-MIB::hh3cEntityExtTemperature.112 = INTEGER: 53
+# HH3C-ENTITY-EXT-MIB::hh3cEntityExtTemperature.118 = INTEGER: 53
+# HH3C-ENTITY-EXT-MIB::hh3cEntityExtTemperature.121 = INTEGER: 53
+# HH3C-ENTITY-EXT-MIB::hh3cEntityExtTemperature.122 = INTEGER: 51
+
+
+factory_settings['hh3c_entity_temp_default_levels'] = {
+    'levels': (61, 66),
+}
+
+def _hh3c_entity_temp_get_name_for_sensor(nr, ent_physical_descr, module):
+    if ent_physical_descr in ['SENSOR']:
+        description = 'module'
+    elif ent_physical_descr in ['Temperature Sensor on Board']:
+        description = 'module board'
+    else:
+        return None
+    # return '{} {}: {}, warn: {}, critical: {}'.format(description, int(module), temp, warn, critical)
+    return '{} {} {}'.format(nr, description, int(module))
+
+def inventory_hh3c_entity_temp(info):
+    # Debug: lets see how the data we get looks like
+    # import pprint ; pprint.pprint(info)
+
+    module = 1.0
+    for nr, elem in enumerate(info):
+        ent_physical_descr, temp = elem
+        temp = int(temp)
+        name = _hh3c_entity_temp_get_name_for_sensor(nr, ent_physical_descr, module)
+        if temp != 65535 and name:
+            # print(name)
+            yield name, {}
+
+            module += 0.5
+            ## Occurs two times per module. Different temperatures … See above.
+
+def check_hh3c_entity_temp(item, params, info):
+    for nr, elem in enumerate(info):
+        if unicode(item).startswith(unicode(nr) + ' '):
+            ent_physical_descr, temp = elem
+            degree_celsius = float(elem[1])
+            return check_temperature(degree_celsius, params)
+
+    return (3, "Invalid information in snmp data")
+
+check_info['hh3c_entity_temp'] = {
+    'check_function'          : check_hh3c_entity_temp,
+    'inventory_function'      : inventory_hh3c_entity_temp,
+    "service_description"     : "Temperature %s",
+    'snmp_scan_function'      : lambda oid: 'HP Comware Platform Software' in oid('.1.3.6.1.2.1.1.1.0') and \
+        oid('.1.3.6.1.4.1.25506.2.6.1.1.1.1.12.1') != None,
+    'snmp_info'               : ( '.1.3.6.1',
+        [
+            '2.1.47.1.1.1.1.2',
+            '4.1.25506.2.6.1.1.1.1.12',
+            # '4.1.25506.2.6.1.1.1.1.13',
+            # '4.1.25506.2.6.1.1.1.1.17',
+        ] ),
+    'has_perfdata'            : True,
+    'default_levels_variable' : 'hh3c_entity_temp_default_levels',
+    'group'                   : 'temperature',
+    "includes"                : [ 'temperature.include' ],
+}

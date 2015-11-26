@@ -251,6 +251,7 @@ perfometers["check_mk-kentix_temp"] = perfometer_temperature
 perfometers["check_mk-ucs_bladecenter_fans.temp"] = perfometer_temperature
 perfometers["check_mk-ucs_bladecenter_psu.chassis_temp"] = perfometer_temperature
 perfometers["check_mk-cisco_temperature"] = perfometer_temperature
+perfometers["check_mk-hh3c_entity_temp"] = perfometer_temperature
 
 def perfometer_temperature_multi(row, check_command, perf_data):
     display_value = -1
@@ -497,6 +498,7 @@ perfometers["check_mk-ibm_svc_systemstats.cpu_util"] = perfometer_cpu_utilizatio
 perfometers["check_mk-sni_octopuse_cpu"] = perfometer_cpu_utilization
 perfometers["check_mk-casa_cpu_util"] = perfometer_cpu_utilization
 perfometers["check_mk-juniper_screenos_cpu"] = perfometer_cpu_utilization
+perfometers["check_mk-hh3c_entity_cpu"] = perfometer_cpu_utilization
 
 def perfometer_ps_perf(row, check_command, perf_data):
     perf_dict = dict([(p[0], float(p[1])) for p in perf_data])
@@ -853,6 +855,7 @@ perfometers['check_mk-juniper_screenos_mem'] = perfometer_simple_mem_usage
 perfometers['check_mk-netscaler_mem'] = perfometer_simple_mem_usage
 perfometers['check_mk-arris_cmts_mem'] = perfometer_simple_mem_usage
 perfometers["check_mk-juniper_trpz_mem"] = perfometer_simple_mem_usage
+perfometers["check_mk-hh3c_entity_mem"] = perfometer_simple_mem_usage
 
 def perfometer_vmguest_mem_usage(row, command, perf):
     used = float(perf[0][1])

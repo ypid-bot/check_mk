@@ -1,0 +1,20 @@
+title: HP Comware Switches: System Temperature
+agents: snmp
+catalog: hw/network/hp
+license: GPL
+distribution: check_mk
+description:
+ This check monitors the system temperature on HP Comware Switches which support the
+ HH3C-ENTITY-EXT-MIB.
+
+ Creates on service for each module and temperature sensor.
+
+perfdata:
+ One variable: the system temperature in celsius.
+
+inventory:
+ One service is created for the system temperature.
+
+parameters (dict):
+
+ {"levels"}: Warning and critical level of temperature.
