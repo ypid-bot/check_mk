@@ -59,6 +59,11 @@ class ModeBI(WatoMode):
             'HARD_STATES'        : 'HARD_STATES-f41e728b-0bce-40dc-82ea-51091d034fc3',
         }
         self.load_config()
+
+        if not config.may("wato.bi_admin"):
+            self._user_contactgroups = userdb.contactgroups_of_user(config.user_id)
+        else:
+            self._user_contactgroups = None # meaning I am admin
         self.create_valuespecs()
 
         # Most modes need a pack as context
@@ -71,11 +76,16 @@ class ModeBI(WatoMode):
 
 
     def title(self):
-        return _("Business Intelligence")
+        title = _("Business Intelligence")
+        if self._pack:
+            title += " - " + html.attrencode(self._pack["title"])
+        return title
 
 
     def buttons(self):
         home_button()
+        if self._pack:
+            html.context_button(_("All Packs"), html.makeuri_contextless([("mode", "bi_packs")]), "back")
 
 
     # .--------------------------------------------------------------------.
@@ -129,13 +139,6 @@ class ModeBI(WatoMode):
                     "contact_groups" : pack["contact_groups"],
                 }
 
-            # DAS HIER MUSS BALD RAUS
-            if self._packs:
-                self._aggregations = self._packs.values()[0]["aggregations"]
-                self._aggregation_rules = self._packs.values()[0]["rules"]
-            else:
-                self._aggregation_rules = {}
-                self._aggregations = []
 
 
         except Exception, e:
@@ -361,12 +364,22 @@ class ModeBI(WatoMode):
         self._vs_aggregation = self.vs_aggregation()
 
 
-    def rule_choices(self):
-        return [
-           (key, key + " - " + rule["title"])
-           for (key, rule)
-           in self._aggregation_rules.items() ]
+    def allowed_rule_choices(self):
+        choices = []
+        for pack_id, pack in sorted(self._packs.items()):
+            if self.may_use_rules_in_pack(pack):
+                for rule_id, rule in sorted(pack["rules"].items()):
+                    choices.append((rule_id, "%s - %s/%s" % (rule_id, pack["title"], rule["title"])))
+        return choices
 
+
+    def may_use_rules_in_pack(self, pack):
+        if self._user_contactgroups == None:
+            return True
+        for group in self._user_contactgroups:
+            if group in pack["contact_groups"]:
+                return True
+        return False
 
 
     def validate_rule_call(self, value, varprefix):
@@ -384,7 +397,7 @@ class ModeBI(WatoMode):
             elements = [
                 DropdownChoice(
                     title = _("Rule:"),
-                    choices = self.rule_choices(),
+                    choices = self.allowed_rule_choices(),
                     sorted = True,
                 ),
                 ListOfStrings(
@@ -739,11 +752,12 @@ class ModeBIPacks(ModeBI):
 
     def buttons(self):
         ModeBI.buttons(self)
-        html.context_button(_("New BI Pack"), html.makeuri_contextless([("mode", "bi_edit_pack")]), "new")
+        if config.may("wato.bi_admin"):
+            html.context_button(_("New BI Pack"), html.makeuri_contextless([("mode", "bi_edit_pack")]), "new")
 
 
     def action(self):
-        if html.has_var("_delete"):
+        if config.may("wato.bi_admin") and html.has_var("_delete"):
             pack_id = html.var("_delete")
             pack = self._packs[pack_id]
             c = wato_confirm(_("Confirm BI pack deletion"),
@@ -761,12 +775,16 @@ class ModeBIPacks(ModeBI):
     def page(self):
         table.begin(title = _("BI Configuration Packs"))
         for pack_id, pack in sorted(self._packs.items()):
+            if not self.may_use_rules_in_pack(pack):
+                continue
+
             table.row()
             table.cell(_("Actions"), css="buttons")
-            edit_url   = html.makeuri_contextless([("mode", "bi_edit_pack"), ("pack", pack_id)])
-            html.icon_button(edit_url, _("Edit properties of this BI pack"), "edit")
-            delete_url = html.makeactionuri([("_delete", pack_id)])
-            html.icon_button(delete_url, _("Delete this BI pack"), "delete")
+            if config.may("wato.bi_admin"):
+                edit_url   = html.makeuri_contextless([("mode", "bi_edit_pack"), ("pack", pack_id)])
+                html.icon_button(edit_url, _("Edit properties of this BI pack"), "edit")
+                delete_url = html.makeactionuri([("_delete", pack_id)])
+                html.icon_button(delete_url, _("Delete this BI pack"), "delete")
             rules_url  = html.makeuri_contextless([("mode", "bi_rules"), ("pack", pack_id)])
             html.icon_button(rules_url, _("Edit the rules and aggregations in this BI pack"), "bi_rules")
             table.cell(_("ID"), pack_id)
@@ -942,7 +960,7 @@ class ModeBIAggregations(ModeBI):
                 html.icon(_("This aggregation covers only data from a single host."), "host")
             table.cell(_("Groups"), ", ".join(aggregation["groups"]))
             ruleid, description = self.rule_called_by_node(aggregation["node"])
-            edit_url = html.makeuri([("mode", "bi_edit_rule"), ("id", ruleid)])
+            edit_url = html.makeuri([("mode", "bi_edit_rule"), ("pack", self._pack_id), ("id", ruleid)])
             table.cell(_("Rule Tree"), css="bi_rule_tree")
             self.render_aggregation_rule_tree(aggregation)
             table.cell(_("Note"), description)
@@ -979,7 +997,7 @@ class ModeBIRules(ModeBI):
         ModeBI.buttons(self)
         if self._view_type == "list":
             html.context_button(_("Aggregations"), html.makeuri_contextless([("mode", "bi_aggregations")]), "aggr")
-            html.context_button(_("New Rule"), html.makeuri_contextless([("mode", "bi_edit_rule")]), "new")
+            html.context_button(_("New Rule"), html.makeuri_contextless([("mode", "bi_edit_rule"), ("pack", self._pack_id)]), "new")
             html.context_button(_("Unused Rules"), html.makeuri_contextless([("mode", "bi_rules"), ("view", "unused")]), "unusedbirules")
 
         else:
@@ -1003,8 +1021,9 @@ class ModeBIRules(ModeBI):
 
     def page(self):
         if not self._aggregations and not self._aggregation_rules:
+            new_url = html.makeuri_contextless([("mode", "bi_edit_rule"), ("pack", self._pack_id)])
             menu_items = [
-                ("bi_edit_rule", _("Create aggregation rule"), "new", "bi_rules",
+                (new_url, _("Create aggregation rule"), "new", "bi_rules",
                   _("Rules are the nodes in BI aggregations. "
                     "Each aggregation has one rule as its root."))
             ]
@@ -1032,7 +1051,7 @@ class ModeBIRules(ModeBI):
             if not only_unused or refs == 0:
                 table.row()
                 table.cell(_("Actions"), css="buttons")
-                edit_url = html.makeuri_contextless([("mode", "bi_edit_rule"), ("id", ruleid)])
+                edit_url = html.makeuri_contextless([("mode", "bi_edit_rule"), ("pack", self._pack_id), ("id", ruleid)])
                 html.icon_button(edit_url, _("Edit this rule"), "edit")
                 if rule_refs == 0:
                     tree_url = html.makeuri([("mode", "bi_rule_tree"), ("id", ruleid)])
@@ -1212,7 +1231,6 @@ class ModeBIEditRule(ModeBI):
         html.context_button(_("Abort"), html.makeuri([("mode", "bi_rules")]), "abort")
 
 
-
     def action(self):
         if html.check_transaction():
             vs_rule = self.valuespec()
@@ -1221,6 +1239,7 @@ class ModeBIEditRule(ModeBI):
             if self._new:
                 self._ruleid = new_rule["id"]
 
+            # TODO: Die Prüfung muss jetzt global laufen!
             if self._new and self._ruleid in self._aggregation_rules:
                 raise MKUserError('rule_p_id',
                     _("There is already a rule with the id <b>%s</b>" % self._ruleid))
@@ -1230,24 +1249,24 @@ class ModeBIEditRule(ModeBI):
 
             if self._new:
                 del new_rule["id"]
-                self._aggregation_rules[self._ruleid] = new_rule
+                self._pack["rules"][self._ruleid] = new_rule
                 log_pending(SYNC, None, "bi-new-rule", _("Create new BI rule %s") % self._ruleid)
             else:
-                self._aggregation_rules[self._ruleid].update(new_rule)
+                self._pack["rules"][self._ruleid].update(new_rule)
                 new_rule["id"] = self._ruleid
                 if self.rule_uses_rule(new_rule, new_rule["id"]):
                     raise MKUserError(None, _("There is a cycle in your rules. This rule calls itself - "
                                               "either directly or indirectly."))
                 log_pending(SYNC, None, "bi-edit-rule", _("Modified BI rule %s") % self._ruleid)
-
             self.save_config()
+
         return "bi_rules"
 
     def page(self):
         if self._new:
             value = {}
         else:
-            value = self._aggregation_rules[self._ruleid]
+            value = self._pack["rules"][self._ruleid]
 
         html.begin_form("birule", method="POST")
         self.valuespec().render_input("rule", value)
@@ -1587,14 +1606,18 @@ host_aggregations += [
 #   '----------------------------------------------------------------------'
 
 config.declare_permission("wato.bi_rules",
-    _("Business Intelligence Rules"),
-    _("Edit the rules for the BI aggregations."),
-     [ "admin" ])
+    _("Business Intelligence Rules and Aggregations"),
+    _("User the WATO BI module, create, modify and delete BI rules and aggregations in packs that you are a contact of"),
+     [ "admin", "user" ])
 
+config.declare_permission("wato.bi_admin",
+    _("Business Intelligence Administration"),
+    _("Edit all rules and aggregations for Business Intelligence, create, modify and delete rule packs."),
+     [ "admin" ])
 
 modes.update({
     "bi_packs"           : (["bi_rules"], ModeBIPacks),
-    "bi_edit_pack"       : (["bi_rules"], ModeBIEditPack),
+    "bi_edit_pack"       : (["bi_rules", "bi_admin"], ModeBIEditPack),
     "bi_rules"           : (["bi_rules"], ModeBIRules),
     "bi_aggregations"    : (["bi_rules"], ModeBIAggregations),
     "bi_rule_tree"       : (["bi_rules"], ModeBIRuleTree),
