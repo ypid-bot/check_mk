@@ -100,7 +100,7 @@ class ModeBI(WatoMode):
             vars = { "aggregation_rules" : {},
                      "aggregations"      : [],
                      "host_aggregations" : [],
-                     "aggregation_packs" : {},
+                     "bi_packs" : {},
                    }
             vars.update(self._bi_constants)
             if os.path.exists(filename):
@@ -110,8 +110,8 @@ class ModeBI(WatoMode):
 
             # put legacy non-pack stuff into packs
             if (vars["aggregation_rules"] or vars["aggregations"] or vars["host_aggregations"]) and \
-                "default" not in vars["aggregation_packs"]:
-                vars["aggregation_packs"]["default"] = {
+                "default" not in vars["bi_packs"]:
+                vars["bi_packs"]["default"] = {
                     "title"             : _("Default Pack"),
                     "rules"             : vars["aggregation_rules"],
                     "aggregations"      : vars["aggregations"],
@@ -121,7 +121,7 @@ class ModeBI(WatoMode):
                 }
 
             self._packs = {}
-            for pack_id, pack in vars["aggregation_packs"].items():
+            for pack_id, pack in vars["bi_packs"].items():
                 # Convert rules from old-style tuples to new-style dicts
                 aggregation_rules = {}
                 for ruleid, rule in pack["rules"].items():
@@ -158,7 +158,7 @@ class ModeBI(WatoMode):
         out.write(wato_fileheader())
         for pack_id, pack in sorted(self._packs.items()):
             converted_pack = self._convert_pack_to_bi(pack)
-            out.write("aggregation_packs[%r] = %s\n\n" % (
+            out.write("bi_packs[%r] = %s\n\n" % (
                 pack_id, self._replace_bi_constants(pprint.pformat(converted_pack, width=50))))
 
         # Make sure that BI aggregates are replicated to all other sites that allow
