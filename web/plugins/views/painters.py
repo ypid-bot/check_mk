@@ -886,14 +886,15 @@ def paint_time_graph_cmk(row, show_timeranges=False):
         "show_controls"   : True,
         "show_service"    : False,
         "show_legend"     : True,
-        "show_timeranges" : show_timeranges,
         "resizable"       : True,
+        "interaction"     : True,
     }
 
     return "", metrics.render_graphs_from_specification_html(
-        graph_specification,
-        graph_data_range,
-        graph_render_options)
+            graph_specification,
+            graph_data_range,
+            graph_render_options,
+            show_timeranges)
 
 
 def get_graph_timerange_from_painter_options():

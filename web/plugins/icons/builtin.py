@@ -340,10 +340,11 @@ def pnp_graph_icon_link(row, what):
     if 'X' not in html.display_options:
         return ""
 
-    if not metrics.new_style_graphs_possible():
+    if not metrics.cmk_graphs_possible():
         return pnp_url(row, what)
     else:
         return new_graphing_url(row, what)
+
 
 def pnp_icon(row, what):
     url = pnp_graph_icon_link(row, what)
