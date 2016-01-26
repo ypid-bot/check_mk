@@ -1218,11 +1218,10 @@ def render_graph_pnp(graph_template, translated_metrics):
 
 def cmk_graphs_possible():
     try:
-        compute_abstract_graph
-    except NameError:
+        render_graph_html
+        return browser_supports_canvas() and not html.is_mobile()
+    except:
         return False
-
-    return browser_supports_canvas() and not html.is_mobile()
 
 
 def browser_supports_canvas():
@@ -1297,32 +1296,6 @@ def page_host_service_graph_popup():
         host_service_graph_popup_pnp(site, host_name, service_description)
 
 
-def host_service_graph_popup_cmk(site, host_name, service_description):
-    graph_render_options = {
-        "size"          : (30, 10),
-        "show_legend"   : False,
-        "show_controls" : False,
-        "resizable"     : False,
-        "font_size"     : 8,
-    }
-
-    end_time = time.time()
-    start_time = end_time - 8 * 3600
-    graph_data_range = {
-        "time_range" : (start_time, end_time),
-    }
-
-    graph_definitions = create_graph_definitions_from_specification((
-            "template", {
-                "site"                : site,
-                "host_name"           : host_name,
-                "service_description" : service_description,
-            }))
-
-    for graph_definitions in graph_definitions:
-        html.write(render_graph_html(graph_definitions, graph_data_range, graph_render_options, graph_id_prefix="hover"))
-
-
 
 def host_service_graph_popup_pnp(site, host_name, service_description):
     pnp_host   = pnp_cleanup(host_name)
@@ -1365,43 +1338,32 @@ def page_host_service_graph_dashlet():
 
 
 def host_service_graph_dashlet_cmk(site, host_name, service_description, source):
-    try:
-        row = get_graph_data_from_livestatus(site, host_name, service_description)
-    except livestatus.MKLivestatusNotFoundError:
-        html.write('<div class="error">%s</div>' %
-            _('Failed to fetch data for graph. Maybe the site is not reachable?'))
-        return
-
-    # minus margin
-    # width: left legend and right margin (- 49 - 5)
-    # height: title height
     size = (int(((float(html.var("width")) - 49 - 5)/html_size_per_ex)),
             int((float(html.var("height")) - 23)/html_size_per_ex))
-    font_size       = 11
-    show_legend     = True
-    graph_id_prefix = "dashlet_" + html.var("id")
+    graph_render_options = {
+        "size"          : size,
+        "font_size"     : 8,
+        "show_legend"   : False,
+        "show_controls" : False,
+        "resizable"     : False,
+    }
 
-    # now try to render the graph with our graphing. If it is not possible,
-    # add JS code to let browser fetch the PNP graph
-    # FIXME: Currently always displaying 8h graph
     end_time = time.time()
     start_time = end_time - 8 * 3600
+    graph_data_range = {
+        "time_range" : (start_time, end_time),
+    }
 
-    # render specific graph (e.g. for the dashlet)
-    perf_data_string, translated_metrics, check_command, graph_templates = find_possible_graphs(row)
-    graph_template = get_graph_template_by_source(graph_templates, source)
+    graph_specification = (
+        "template", {
+            "site"                : site,
+            "host_name"           : host_name,
+            "service_description" : service_description,
+    })
 
-    if graph_template:
-        # FIXME: The dashlet size can not be used as graph area size directly when
-        # show_legend=True. The legend needs to be substracted from the size to make
-        # the graph fit the dashlet area. Currently fixing this by disabling the
-        # legend which makes it work for the moment. But for the future we need to
-        # make the legend available for dashlets.
-        html.write(render_graph_from_template_html(row["site"], host_name, service_description, perf_data_string,
-                                     check_command, graph_template,
-                                     start_time, end_time, size=size,
-                                     show_controls=False, show_legend=False,
-                                     resizable=False, graph_id_prefix=graph_id_prefix))
+    html_code = render_graphs_from_specification_html(graph_specification, graph_data_range, graph_render_options)
+    html.log(html_code)
+    html.write(html_code)
 
 
 def host_service_graph_dashlet_pnp(site, host_name, service_description, source):
